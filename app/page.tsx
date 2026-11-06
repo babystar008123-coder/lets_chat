@@ -22,8 +22,7 @@ import {
   FiEdit2,
   FiHeart,
   FiX,
-  FiDownload,
-  FiTrash2
+  FiDownload
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
@@ -127,9 +126,9 @@ export default function LetsChatApp() {
   const [authError, setAuthError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // PWA Deferred Prompt State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  // PWA Install State
+  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
 
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [activeChat, setActiveChat] = useState<ChatContact | null>(null);
@@ -158,39 +157,44 @@ export default function LetsChatApp() {
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Catch PWA Install Event
+  // PWA பிடிபடும் நிகழ்வு
   useEffect(() => {
-    const handleBeforeInstall = (e: any) => {
+    const handlePrompt = (e: any) => {
       e.preventDefault();
-      setDeferredPrompt(e);
-      setShowInstallBanner(true);
+      setInstallPromptEvent(e);
+      setShowInstallPrompt(true);
     };
 
-    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("beforeinstallprompt", handlePrompt);
 
     if (window.matchMedia("(display-mode: standalone)").matches) {
-      setShowInstallBanner(false);
+      setShowInstallPrompt(false);
+    }
+
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
     }
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("beforeinstallprompt", handlePrompt);
     };
   }, []);
 
-  const handleTriggerInstall = async () => {
-    if (!deferredPrompt) {
-      alert("Browser menu la irundhu 'Install app' kudunga.");
+  const triggerPwaInstall = async () => {
+    if (!installPromptEvent) {
+      alert("Use browser menu (⋮) -> 'Install app'.");
       return;
     }
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
+    installPromptEvent.prompt();
+    const { outcome } = await installPromptEvent.userChoice;
     if (outcome === "accepted") {
-      setShowInstallBanner(false);
-      setDeferredPrompt(null);
+      setShowInstallPrompt(false);
+      setInstallPromptEvent(null);
     }
   };
 
-  // Load active user or clean state
   useEffect(() => {
     const saved = localStorage.getItem("lets_chat_active_user");
     if (saved) {
@@ -201,7 +205,6 @@ export default function LetsChatApp() {
     }
   }, []);
 
-  // Listen for contacts and requests
   useEffect(() => {
     if (!currentUser) return;
 
@@ -243,7 +246,7 @@ export default function LetsChatApp() {
     };
   }, [currentUser]);
 
-  // Real-time messages listener
+  // வாட்ஸ்அப் போன்ற புஷ் நோட்டிஃபிகேஷன் அமைத்தல்
   useEffect(() => {
     if (!currentUser || !activeChat) return;
 
@@ -258,6 +261,23 @@ export default function LetsChatApp() {
           ...data[k]
         }));
         setMessages(parsed);
+
+        const lastMsg = parsed[parsed.length - 1];
+        if (
+          lastMsg &&
+          lastMsg.senderId !== currentUser.glassId &&
+          document.visibilityState !== "visible"
+        ) {
+          if ("serviceWorker" in navigator && Notification.permission === "granted") {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification(`LetsChat • ${lastMsg.senderName || "New Message"}`, {
+                body: lastMsg.type === "text" ? lastMsg.content : `Sent a ${lastMsg.type}`,
+                icon: "/icon-192.png",
+                badge: "/icon-192.png"
+              });
+            });
+          }
+        }
       } else {
         setMessages([]);
       }
@@ -370,31 +390,6 @@ export default function LetsChatApp() {
     setName("");
     setCustomGlassId("");
     setIsRegister(true);
-  };
-
-  // FULL DATABASE & ACCOUNT RESET (To wipe all accounts and start fresh)
-  const handleFullDatabaseReset = async () => {
-    const confirmReset = window.confirm(
-      "Idhu ella user accounts matrum chats-ai completely delete pannidum. Neenga fresh-aa start panna virumbureengala?"
-    );
-    if (!confirmReset) return;
-
-    try {
-      await remove(ref(db, "users"));
-      await remove(ref(db, "mobileIndex"));
-      await remove(ref(db, "requests"));
-      await remove(ref(db, "contacts"));
-      await remove(ref(db, "chats"));
-      localStorage.clear();
-      setCurrentUser(null);
-      setActiveChat(null);
-      setContacts([]);
-      setMessages([]);
-      setIsRegister(true);
-      alert("All accounts deleted successfully! Starting fresh now.");
-    } catch {
-      alert("Reset failed. Check connection.");
-    }
   };
 
   const handleSendConnectionRequest = async () => {
@@ -571,7 +566,6 @@ export default function LetsChatApp() {
     setShowTodModal(false);
   };
 
-  // Auth / Registration Screen
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
@@ -686,17 +680,6 @@ export default function LetsChatApp() {
                 : "Sign In"}
             </button>
           </form>
-
-          {/* Clean Reset Button */}
-          <div className="pt-2 text-center">
-            <button
-              type="button"
-              onClick={handleFullDatabaseReset}
-              className="text-[11px] text-gray-400 hover:text-red-500 flex items-center justify-center gap-1 mx-auto transition-colors"
-            >
-              <FiTrash2 /> Wipe All Data & Fresh Start
-            </button>
-          </div>
         </div>
       </main>
     );
@@ -706,25 +689,25 @@ export default function LetsChatApp() {
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         
-        {/* TOP POPUP PROMPT: INSTALL APP WITHOUT CHROME BADGE */}
-        {showInstallBanner && (
+        {/* PWA INSTALL BANNER */}
+        {showInstallPrompt && (
           <div className="bg-gradient-to-r from-rose-500 to-pink-600 text-white p-2.5 px-4 flex items-center justify-between shadow-lg z-30">
             <div className="flex items-center gap-2">
               <FiDownload className="text-base animate-bounce" />
               <div>
                 <p className="text-xs font-bold leading-tight">Install LetsChat</p>
-                <p className="text-[10px] text-rose-100">Direct app icon without Chrome badge</p>
+                <p className="text-[10px] text-rose-100">Standalone app without Chrome badge</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={handleTriggerInstall}
+                onClick={triggerPwaInstall}
                 className="px-3 py-1 bg-white text-rose-600 rounded-lg text-xs font-extrabold shadow active:scale-95 transition-all"
               >
                 Install Now
               </button>
               <button
-                onClick={() => setShowInstallBanner(false)}
+                onClick={() => setShowInstallPrompt(false)}
                 className="text-white/80 hover:text-white p-1"
               >
                 <FiX className="text-sm" />
@@ -739,7 +722,7 @@ export default function LetsChatApp() {
               <div
                 onClick={() => setShowProfileModal(true)}
                 className="flex items-center gap-3 cursor-pointer group"
-                title="Click to edit Name, 5-Digit ID or Picture"
+                title="Click to edit Profile"
               >
                 <div className="relative">
                   <img
@@ -1139,7 +1122,7 @@ export default function LetsChatApp() {
           </div>
         )}
 
-        {/* Connect via 5-Digit ID Modal */}
+        {/* Connect Modal */}
         {showAddContactModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">

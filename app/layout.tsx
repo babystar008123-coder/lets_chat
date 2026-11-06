@@ -4,18 +4,18 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "LetsChat",
   description: "Private 1-on-1 Messenger",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "LetsChat",
-  },
+    title: "LetsChat"
+  }
 };
 
 export const viewport: Viewport = {
   themeColor: "#f43f5e",
   width: "device-width",
-  initialScale: 1,
+  initialScale: 1
 };
 
 export default function RootLayout({
@@ -26,6 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/icon-192.png" />
       </head>
       <body>
@@ -36,7 +37,8 @@ export default function RootLayout({
               if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                    .catch((err) => console.log('SW error:', err));
+                    .then(reg => console.log('SW Ready:', reg.scope))
+                    .catch(err => console.error('SW Error:', err));
                 });
               }
             `,
