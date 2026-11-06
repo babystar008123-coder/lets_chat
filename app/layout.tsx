@@ -15,7 +15,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#f43f5e",
   width: "device-width",
-  initialScale: 1
+  initialScale: 1,
+  maximumScale: 1
 };
 
 export default function RootLayout({
@@ -28,6 +29,7 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/icon-192.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>
         {children}
@@ -37,7 +39,6 @@ export default function RootLayout({
               if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                    .then(reg => console.log('SW Ready:', reg.scope))
                     .catch(err => console.error('SW Error:', err));
                 });
               }
