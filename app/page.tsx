@@ -9,8 +9,7 @@ import {
   get,
   onValue,
   push,
-  remove,
-  child
+  remove
 } from "firebase/database";
 import {
   FiSend,
@@ -19,21 +18,19 @@ import {
   FiLogOut,
   FiArrowLeft,
   FiCheck,
-  FiCamera,
-  FiEdit2,
-  FiX
+  FiCamera
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
-// Replace with your Firebase Project Configuration values
+// Firebase Config விவரங்கள்
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyYOUR_API_KEY",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "your-project.firebaseapp.com",
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://your-project-default-rtdb.firebaseio.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "your-project",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "your-project.appspot.com",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDummyKey",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "lets-chat-app.firebaseapp.com",
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://lets-chat-app-default-rtdb.firebaseio.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "lets-chat-app",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "lets-chat-app.appspot.com",
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "1234567890",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:1234567890:web:abcdef12345"
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:1234567890:web:abcdef"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -110,8 +107,8 @@ export default function LetsChatApp() {
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
+  const [customGlassId, setCustomGlassId] = useState("");
   const [pin, setPin] = useState("");
-  const [avatarPreview, setAvatarPreview] = useState("");
   const [authError, setAuthError] = useState("");
 
   const [contacts, setContacts] = useState<ChatContact[]>([]);
@@ -130,8 +127,8 @@ export default function LetsChatApp() {
   const [searchGlassId, setSearchGlassId] = useState("");
   const [addContactError, setAddContactError] = useState("");
   const [requestStatus, setRequestStatus] = useState("");
+  const [isSending, setIsSending] = useState(false);
 
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -139,11 +136,10 @@ export default function LetsChatApp() {
     if (saved) setCurrentUser(JSON.parse(saved));
   }, []);
 
-  // Listen for incoming connection requests & contacts in real time
+  // ரியல்-டைமில் ரிக்வெஸ்ட் மற்றும் தொடர்புகளை கவனித்தல்
   useEffect(() => {
     if (!currentUser) return;
 
-    // 1. Listen for requests sent to MY 5-digit Glass ID
     const reqRef = ref(db, `requests/${currentUser.glassId}`);
     const unsubscribeReq = onValue(reqRef, (snapshot) => {
       const data = snapshot.val();
@@ -159,7 +155,6 @@ export default function LetsChatApp() {
       }
     });
 
-    // 2. Listen for accepted contacts
     const contactsRef = ref(db, `contacts/${currentUser.glassId}`);
     const unsubscribeContacts = onValue(contactsRef, (snapshot) => {
       const data = snapshot.val();
@@ -182,11 +177,10 @@ export default function LetsChatApp() {
     };
   }, [currentUser]);
 
-  // Listen for active chat messages
+  // மெசேஜ்களை ரியல்-டைமில் கவனித்தல்
   useEffect(() => {
     if (!currentUser || !activeChat) return;
 
-    // Deterministic Chat Room ID between the two Glass IDs
     const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
     const msgRef = ref(db, `chats/${roomId}/messages`);
 
@@ -210,34 +204,41 @@ export default function LetsChatApp() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // புதிய கணக்கு பதிவு - Custom 5-Digit ID சரிபார்ப்புடன்
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setAuthError("Please enter your name.");
     if (mobile.length !== 10) return setAuthError("Please enter a valid 10-digit mobile number.");
+    if (customGlassId.length !== 5) return setAuthError("Please enter a 5-digit Fancy Glass ID.");
     if (pin.length !== 4) return setAuthError("PIN must be exactly 4 digits.");
 
-    const generatedGlassId = Math.floor(10000 + Math.random() * 90000).toString();
-    const newUser: UserProfile = {
-      name: name.trim(),
-      mobile,
-      pin,
-      glassId: generatedGlassId,
-      avatarUrl: avatarPreview || `https://api.dicebear.com/7.x/micah/svg?seed=${name.trim()}`
-    };
-
     try {
-      // Save user to Firebase under /users/{glassId} and /mobileIndex/{mobile}
-      await set(ref(db, `users/${generatedGlassId}`), newUser);
-      await set(ref(db, `mobileIndex/${mobile}`), generatedGlassId);
+      // 1. இந்த 5-Digit ID ஏற்கனவே உள்ளதா என சரிபார்த்தல்
+      const idCheck = await get(ref(db, `users/${customGlassId}`));
+      if (idCheck.exists()) {
+        return setAuthError("This 5-Digit ID is already taken. Please try another one!");
+      }
+
+      const newUser: UserProfile = {
+        name: name.trim(),
+        mobile,
+        pin,
+        glassId: customGlassId,
+        avatarUrl: `https://api.dicebear.com/7.x/micah/svg?seed=${customGlassId}`
+      };
+
+      await set(ref(db, `users/${customGlassId}`), newUser);
+      await set(ref(db, `mobileIndex/${mobile}`), customGlassId);
 
       localStorage.setItem("lets_chat_active_user", JSON.stringify(newUser));
       setCurrentUser(newUser);
       setAuthError("");
     } catch {
-      setAuthError("Database connection failed. Please check your network.");
+      setAuthError("Failed to register. Check database connection & rules.");
     }
   };
 
+  // லாகின் செயல்பாடு
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mobile.length !== 10) return setAuthError("Please enter your 10-digit mobile number.");
@@ -246,7 +247,7 @@ export default function LetsChatApp() {
     try {
       const mobileSnap = await get(ref(db, `mobileIndex/${mobile}`));
       if (!mobileSnap.exists()) {
-        return setAuthError("Mobile number not registered. Please register first.");
+        return setAuthError("Mobile number not registered. Please switch to Register.");
       }
 
       const userGlassId = mobileSnap.val();
@@ -260,7 +261,7 @@ export default function LetsChatApp() {
       setCurrentUser(user);
       setAuthError("");
     } catch {
-      setAuthError("Failed to sign in. Please verify your connection.");
+      setAuthError("Failed to sign in. Verify internet connection.");
     }
   };
 
@@ -271,11 +272,12 @@ export default function LetsChatApp() {
     setMobile("");
     setPin("");
     setName("");
+    setCustomGlassId("");
   };
 
-  // Send real connection request to Firebase
+  // ரிக்வெஸ்ட் அனுப்பும் செயல்பாடு
   const handleSendConnectionRequest = async () => {
-    if (!currentUser) return;
+    if (!currentUser || isSending) return;
     if (searchGlassId.trim().length !== 5) {
       setAddContactError("Enter a valid 5-digit Glass ID.");
       return;
@@ -285,15 +287,20 @@ export default function LetsChatApp() {
       return;
     }
 
+    setIsSending(true);
+    setAddContactError("");
+    setRequestStatus("Checking user ID...");
+
     try {
-      // Check if recipient exists in Firebase
       const targetUserSnap = await get(ref(db, `users/${searchGlassId}`));
       if (!targetUserSnap.exists()) {
+        setIsSending(false);
+        setRequestStatus("");
         setAddContactError("No user found with this 5-digit ID.");
         return;
       }
 
-      // Write request to recipient's inbox
+      // எதிர்முனை பயனருக்கு ரிக்வெஸ்ட் அனுப்புதல்
       await set(ref(db, `requests/${searchGlassId}/${currentUser.glassId}`), {
         senderGlassId: currentUser.glassId,
         senderName: currentUser.name,
@@ -301,24 +308,26 @@ export default function LetsChatApp() {
         timestamp: Date.now()
       });
 
-      setRequestStatus("Request sent! Waiting for acceptance...");
+      setIsSending(false);
+      setRequestStatus("Request sent successfully! Waiting for acceptance...");
       setTimeout(() => {
         setShowAddContactModal(false);
         setSearchGlassId("");
         setRequestStatus("");
         setAddContactError("");
-      }, 1500);
-    } catch {
-      setAddContactError("Error sending request. Check database rules.");
+      }, 1800);
+    } catch (err: any) {
+      setIsSending(false);
+      setRequestStatus("");
+      setAddContactError("Error sending request: " + (err?.message || "Check Firebase rules"));
     }
   };
 
-  // Accept incoming request -> save to both users' contact lists
+  // ரிக்வெஸ்ட்டை அக்சப்ட் செய்து இருவரது போனிலும் தொடர்புகளை இணைத்தல்
   const handleAcceptRequest = async (req: IncomingRequest) => {
     if (!currentUser) return;
 
     try {
-      // 1. Add sender to recipient's contacts
       await set(ref(db, `contacts/${currentUser.glassId}/${req.fromGlassId}`), {
         glassId: req.fromGlassId,
         name: req.fromName,
@@ -326,7 +335,6 @@ export default function LetsChatApp() {
         lastMessage: "Connected! Say Hi 👋"
       });
 
-      // 2. Add recipient to sender's contacts
       await set(ref(db, `contacts/${req.fromGlassId}/${currentUser.glassId}`), {
         glassId: currentUser.glassId,
         name: currentUser.name,
@@ -334,10 +342,9 @@ export default function LetsChatApp() {
         lastMessage: "Connected! Say Hi 👋"
       });
 
-      // 3. Delete the pending request
       await remove(ref(db, `requests/${currentUser.glassId}/${req.fromGlassId}`));
     } catch {
-      alert("Error accepting request.");
+      alert("Error accepting connection request.");
     }
   };
 
@@ -363,8 +370,7 @@ export default function LetsChatApp() {
 
     await set(newMsgRef, msgPayload);
 
-    // Update last message in contacts for both users
-    const preview = type === "text" ? content : `Sent ${type}`;
+    const preview = type === "text" ? content : `Sent a ${type}`;
     await set(ref(db, `contacts/${currentUser.glassId}/${activeChat.glassId}/lastMessage`), preview);
     await set(ref(db, `contacts/${activeChat.glassId}/${currentUser.glassId}/lastMessage`), preview);
   };
@@ -383,6 +389,7 @@ export default function LetsChatApp() {
     setShowTodModal(false);
   };
 
+  // Auth திரை
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
@@ -391,7 +398,7 @@ export default function LetsChatApp() {
             <h1 className="text-3xl font-extrabold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
               Let's Chat
             </h1>
-            <p className="text-xs text-gray-500 font-semibold tracking-wide">Live 1-on-1 Messenger</p>
+            <p className="text-xs text-gray-500 font-semibold tracking-wide">Secure 1-on-1 Messenger</p>
           </div>
 
           <div className="flex bg-rose-100/60 p-1 rounded-2xl">
@@ -458,6 +465,25 @@ export default function LetsChatApp() {
               </div>
             </div>
 
+            {/* Custom 5-Digit Glass ID Option */}
+            {isRegister && (
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  Choose 5-Digit Glass ID <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 77777 or 12345"
+                  value={customGlassId}
+                  onChange={(e) => setCustomGlassId(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                  maxLength={5}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-center tracking-[0.3em] text-base font-bold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  required
+                />
+                <p className="text-[10px] text-gray-500 mt-1 text-center">Set your own custom 5-digit fancy ID</p>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
                 4-Digit PIN <span className="text-rose-500">*</span>
@@ -486,11 +512,12 @@ export default function LetsChatApp() {
     );
   }
 
+  // முதன்மை பயன்பாட்டுத் திரை
   return (
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         
-        {/* Incoming Connection Request Modal */}
+        {/* வரும் ரிக்வெஸ்ட் பேனர் */}
         {incomingRequests.length > 0 && (
           <div className="absolute top-3 left-3 right-3 z-50 bg-white/95 border-2 border-rose-300 rounded-2xl p-3 shadow-xl space-y-2">
             <p className="text-xs font-bold text-rose-600">New Connection Request!</p>
@@ -543,7 +570,7 @@ export default function LetsChatApp() {
                 <button
                   onClick={() => setShowAddContactModal(true)}
                   className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
-                  title="Add Friend by ID"
+                  title="Add Connection"
                 >
                   <FiUserPlus className="text-lg" />
                 </button>
@@ -565,7 +592,7 @@ export default function LetsChatApp() {
                   </div>
                   <h3 className="font-bold text-gray-800 text-base">Zero Contacts</h3>
                   <p className="text-xs text-gray-600 max-w-xs">
-                    Your account is private. Give your 5-digit Glass ID (<strong>{currentUser.glassId}</strong>) to your friend or enter their ID to connect.
+                    Your account is private. Share your 5-digit Glass ID (<strong>{currentUser.glassId}</strong>) or add a friend's ID to start chatting.
                   </p>
                   <button
                     onClick={() => setShowAddContactModal(true)}
@@ -786,7 +813,7 @@ export default function LetsChatApp() {
           </div>
         )}
 
-        {/* Add Connection Modal */}
+        {/* Connect via 5-Digit ID Modal */}
         {showAddContactModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -816,9 +843,12 @@ export default function LetsChatApp() {
                 <button
                   type="button"
                   onClick={handleSendConnectionRequest}
-                  className="flex-1 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl shadow"
+                  disabled={isSending}
+                  className={`flex-1 py-2 text-white text-xs font-bold rounded-xl shadow transition-all ${
+                    isSending ? "bg-rose-300 cursor-not-allowed" : "bg-rose-500 hover:bg-rose-600"
+                  }`}
                 >
-                  Send Request
+                  {isSending ? "Sending..." : "Send Request"}
                 </button>
               </div>
             </div>
