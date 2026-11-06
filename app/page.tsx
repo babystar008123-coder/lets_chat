@@ -21,7 +21,9 @@ import {
   FiCamera,
   FiEdit2,
   FiHeart,
-  FiX
+  FiX,
+  FiDownload,
+  FiTrash2
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
@@ -38,9 +40,6 @@ const firebaseConfig = {
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getDatabase(app);
-
-// Unique build tag to force cache invalidation on standalone PWA
-const APP_VERSION = "2.1.0";
 
 interface UserProfile {
   name: string;
@@ -120,13 +119,17 @@ const withTimeout = (promise: Promise<any>, ms: number = 15000) => {
 
 export default function LetsChatApp() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [isRegister, setIsRegister] = useState(false);
+  const [isRegister, setIsRegister] = useState(true);
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [customGlassId, setCustomGlassId] = useState("");
   const [pin, setPin] = useState("");
   const [authError, setAuthError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // PWA Deferred Prompt State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
 
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [activeChat, setActiveChat] = useState<ChatContact | null>(null);
@@ -155,33 +158,39 @@ export default function LetsChatApp() {
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto Cache Buster & Service Worker Update Check
+  // Catch PWA Install Event
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const storedVersion = localStorage.getItem("lets_chat_app_version");
-      if (storedVersion !== APP_VERSION) {
-        localStorage.setItem("lets_chat_app_version", APP_VERSION);
-        if ("caches" in window) {
-          caches.keys().then((names) => {
-            names.forEach((name) => caches.delete(name));
-          });
-        }
-      }
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
 
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.getRegistrations().then((registrations) => {
-          for (let registration of registrations) {
-            registration.update();
-          }
-        });
-      }
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
 
-      if ("Notification" in window && Notification.permission === "default") {
-        Notification.requestPermission();
-      }
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setShowInstallBanner(false);
     }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+    };
   }, []);
 
+  const handleTriggerInstall = async () => {
+    if (!deferredPrompt) {
+      alert("Browser menu la irundhu 'Install app' kudunga.");
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setShowInstallBanner(false);
+      setDeferredPrompt(null);
+    }
+  };
+
+  // Load active user or clean state
   useEffect(() => {
     const saved = localStorage.getItem("lets_chat_active_user");
     if (saved) {
@@ -192,6 +201,7 @@ export default function LetsChatApp() {
     }
   }, []);
 
+  // Listen for contacts and requests
   useEffect(() => {
     if (!currentUser) return;
 
@@ -233,6 +243,7 @@ export default function LetsChatApp() {
     };
   }, [currentUser]);
 
+  // Real-time messages listener
   useEffect(() => {
     if (!currentUser || !activeChat) return;
 
@@ -247,19 +258,6 @@ export default function LetsChatApp() {
           ...data[k]
         }));
         setMessages(parsed);
-
-        const lastMsg = parsed[parsed.length - 1];
-        if (
-          lastMsg &&
-          lastMsg.senderId !== currentUser.glassId &&
-          document.visibilityState !== "visible" &&
-          Notification.permission === "granted"
-        ) {
-          new Notification(`${lastMsg.senderName || "New Message"}`, {
-            body: lastMsg.type === "text" ? lastMsg.content : `Sent a ${lastMsg.type}`,
-            icon: activeChat.avatarUrl
-          });
-        }
       } else {
         setMessages([]);
       }
@@ -371,6 +369,32 @@ export default function LetsChatApp() {
     setPin("");
     setName("");
     setCustomGlassId("");
+    setIsRegister(true);
+  };
+
+  // FULL DATABASE & ACCOUNT RESET (To wipe all accounts and start fresh)
+  const handleFullDatabaseReset = async () => {
+    const confirmReset = window.confirm(
+      "Idhu ella user accounts matrum chats-ai completely delete pannidum. Neenga fresh-aa start panna virumbureengala?"
+    );
+    if (!confirmReset) return;
+
+    try {
+      await remove(ref(db, "users"));
+      await remove(ref(db, "mobileIndex"));
+      await remove(ref(db, "requests"));
+      await remove(ref(db, "contacts"));
+      await remove(ref(db, "chats"));
+      localStorage.clear();
+      setCurrentUser(null);
+      setActiveChat(null);
+      setContacts([]);
+      setMessages([]);
+      setIsRegister(true);
+      alert("All accounts deleted successfully! Starting fresh now.");
+    } catch {
+      alert("Reset failed. Check connection.");
+    }
   };
 
   const handleSendConnectionRequest = async () => {
@@ -547,6 +571,7 @@ export default function LetsChatApp() {
     setShowTodModal(false);
   };
 
+  // Auth / Registration Screen
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
@@ -561,21 +586,21 @@ export default function LetsChatApp() {
           <div className="flex bg-rose-100/60 p-1 rounded-2xl">
             <button
               type="button"
+              onClick={() => { setIsRegister(true); setAuthError(""); }}
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+                isRegister ? "bg-rose-500 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              Register (New User)
+            </button>
+            <button
+              type="button"
               onClick={() => { setIsRegister(false); setAuthError(""); }}
               className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
                 !isRegister ? "bg-white text-rose-600 shadow-sm" : "text-gray-600 hover:text-gray-900"
               }`}
             >
               Login
-            </button>
-            <button
-              type="button"
-              onClick={() => { setIsRegister(true); setAuthError(""); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                isRegister ? "bg-rose-500 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Register
             </button>
           </div>
 
@@ -657,10 +682,21 @@ export default function LetsChatApp() {
               {isSubmitting
                 ? "Processing..."
                 : isRegister
-                ? "Create Account"
+                ? "Create Fresh Account"
                 : "Sign In"}
             </button>
           </form>
+
+          {/* Clean Reset Button */}
+          <div className="pt-2 text-center">
+            <button
+              type="button"
+              onClick={handleFullDatabaseReset}
+              className="text-[11px] text-gray-400 hover:text-red-500 flex items-center justify-center gap-1 mx-auto transition-colors"
+            >
+              <FiTrash2 /> Wipe All Data & Fresh Start
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -670,6 +706,33 @@ export default function LetsChatApp() {
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         
+        {/* TOP POPUP PROMPT: INSTALL APP WITHOUT CHROME BADGE */}
+        {showInstallBanner && (
+          <div className="bg-gradient-to-r from-rose-500 to-pink-600 text-white p-2.5 px-4 flex items-center justify-between shadow-lg z-30">
+            <div className="flex items-center gap-2">
+              <FiDownload className="text-base animate-bounce" />
+              <div>
+                <p className="text-xs font-bold leading-tight">Install LetsChat</p>
+                <p className="text-[10px] text-rose-100">Direct app icon without Chrome badge</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleTriggerInstall}
+                className="px-3 py-1 bg-white text-rose-600 rounded-lg text-xs font-extrabold shadow active:scale-95 transition-all"
+              >
+                Install Now
+              </button>
+              <button
+                onClick={() => setShowInstallBanner(false)}
+                className="text-white/80 hover:text-white p-1"
+              >
+                <FiX className="text-sm" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {!activeChat ? (
           <>
             <header className="p-4 border-b border-rose-100 flex items-center justify-between bg-white/60">
@@ -909,6 +972,7 @@ export default function LetsChatApp() {
           </>
         )}
 
+        {/* Requests Modal */}
         {showRequestsModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -957,6 +1021,7 @@ export default function LetsChatApp() {
           </div>
         )}
 
+        {/* Edit Profile Modal */}
         {showProfileModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4 text-center relative">
@@ -1020,6 +1085,7 @@ export default function LetsChatApp() {
           </div>
         )}
 
+        {/* Truth or Dare Modal */}
         {showTodModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -1073,6 +1139,7 @@ export default function LetsChatApp() {
           </div>
         )}
 
+        {/* Connect via 5-Digit ID Modal */}
         {showAddContactModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
