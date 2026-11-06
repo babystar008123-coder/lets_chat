@@ -25,14 +25,16 @@ import {
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
+// Exact Firebase Credentials from Console
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDummyKey",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "lets-chat-app.firebaseapp.com",
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://lets-chat-app-default-rtdb.firebaseio.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "lets-chat-app",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "lets-chat-app.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "1234567890",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:1234567890:web:abcdef"
+  apiKey: "AIzaSyCbUD9KOprj-tshPfD8Yz9jnhtvfFWwT-E",
+  authDomain: "lets-chat-008.firebaseapp.com",
+  databaseURL: "https://lets-chat-008-default-rtdb.firebaseio.com",
+  projectId: "lets-chat-008",
+  storageBucket: "lets-chat-008.firebasestorage.app",
+  messagingSenderId: "834486224386",
+  appId: "1:834486224386:web:f65c6e5f52d8561de9091b",
+  measurementId: "G-0LNJM2NX09"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -104,12 +106,12 @@ const TANGLISH_STICKERS: Record<string, string[]> = {
   ]
 };
 
-// 6 வினாடிகளில் முடங்கிவிடாமல் இருக்க Timeout Promise
+// 6-second timeout helper to prevent freeze
 const withTimeout = (promise: Promise<any>, ms: number = 6000) => {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Request timed out! Check your network or database rules.")), ms)
+      setTimeout(() => reject(new Error("Request timed out. Please check connection.")), ms)
     )
   ]);
 };
@@ -161,7 +163,7 @@ export default function LetsChatApp() {
     }
   }, []);
 
-  // Listen for incoming requests & contacts
+  // Listen for requests & contacts
   useEffect(() => {
     if (!currentUser) return;
 
@@ -239,7 +241,7 @@ export default function LetsChatApp() {
     try {
       const idCheck: any = await withTimeout(get(ref(db, `users/${customGlassId}`)));
       if (idCheck.exists()) {
-        return setAuthError("This 5-Digit ID is already taken. Please try another one!");
+        return setAuthError("This 5-Digit ID is already taken. Please pick another.");
       }
 
       const newUser: UserProfile = {
@@ -259,7 +261,7 @@ export default function LetsChatApp() {
       setEditGlassId(newUser.glassId);
       setAuthError("");
     } catch (err: any) {
-      setAuthError(err?.message || "Failed to register. Check database rules.");
+      setAuthError(err?.message || "Registration failed. Check network connection.");
     }
   };
 
@@ -287,7 +289,7 @@ export default function LetsChatApp() {
       setEditGlassId(user.glassId);
       setAuthError("");
     } catch (err: any) {
-      setAuthError(err?.message || "Failed to sign in.");
+      setAuthError(err?.message || "Login failed.");
     }
   };
 
@@ -301,7 +303,6 @@ export default function LetsChatApp() {
     setCustomGlassId("");
   };
 
-  // ரிக்வெஸ்ட் அனுப்பும் முறை (Hang ஆகாமல் தடுக்கப்பட்டது)
   const handleSendConnectionRequest = async () => {
     if (!currentUser || isSending) return;
     if (searchGlassId.trim().length !== 5) {
@@ -347,11 +348,10 @@ export default function LetsChatApp() {
     } catch (err: any) {
       setIsSending(false);
       setRequestStatus("");
-      setAddContactError(err?.message || "Connection timeout! Check database rules.");
+      setAddContactError(err?.message || "Error sending request.");
     }
   };
 
-  // ரிக்வெஸ்ட் ஏற்கும் முறை
   const handleAcceptRequest = async (req: IncomingRequest) => {
     if (!currentUser) return;
     try {
@@ -384,7 +384,6 @@ export default function LetsChatApp() {
     await remove(ref(db, `requests/${currentUser.glassId}/${fromGlassId}`));
   };
 
-  // DP (Avatar) மாற்றுதல்
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && currentUser) {
@@ -395,28 +394,25 @@ export default function LetsChatApp() {
         setCurrentUser(updated);
         localStorage.setItem("lets_chat_active_user", JSON.stringify(updated));
         await set(ref(db, `users/${currentUser.glassId}/avatarUrl`), newUrl);
-        setProfileMsg("Profile Picture updated successfully!");
+        setProfileMsg("Profile Picture updated!");
         setTimeout(() => setProfileMsg(""), 2000);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // Name & ID சேமித்தல்
   const handleSaveProfile = async () => {
     if (!currentUser) return;
     if (!editName.trim()) return setProfileMsg("Name cannot be empty.");
     if (editGlassId.length !== 5) return setProfileMsg("Glass ID must be 5 digits.");
 
     try {
-      // ஐடி மாற்றப்பட்டிருந்தால் மட்டும் புது ஐடி ஃப்ரீயாக உள்ளதா என பார்க்கவும்
       if (editGlassId !== currentUser.glassId) {
         const check: any = await withTimeout(get(ref(db, `users/${editGlassId}`)));
         if (check.exists()) {
           return setProfileMsg("This ID is already taken. Try another 5-digit number.");
         }
 
-        // பழைய ஐடியை நீக்கிவிட்டு புது ஐடி உருவாக்குதல்
         await remove(ref(db, `users/${currentUser.glassId}`));
         await set(ref(db, `mobileIndex/${currentUser.mobile}`), editGlassId);
       }
@@ -475,7 +471,6 @@ export default function LetsChatApp() {
     setShowTodModal(false);
   };
 
-  // Auth Screen
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
@@ -588,7 +583,6 @@ export default function LetsChatApp() {
     );
   }
 
-  // Dashboard / Chat Interface
   return (
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
@@ -596,11 +590,10 @@ export default function LetsChatApp() {
         {!activeChat ? (
           <>
             <header className="p-4 border-b border-rose-100 flex items-center justify-between bg-white/60">
-              {/* Profile Card -> Tap to Edit Name, ID & DP */}
               <div
                 onClick={() => setShowProfileModal(true)}
                 className="flex items-center gap-3 cursor-pointer group"
-                title="Click to change DP, Name or 5-Digit ID"
+                title="Click to edit Name, 5-Digit ID or Picture"
               >
                 <div className="relative">
                   <img
@@ -622,9 +615,8 @@ export default function LetsChatApp() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                {/* Heart / Request Notification Icon */}
+                {/* Heart Requests Button with Badge */}
                 <button
                   onClick={() => setShowRequestsModal(true)}
                   className="relative p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
@@ -638,7 +630,6 @@ export default function LetsChatApp() {
                   )}
                 </button>
 
-                {/* Add Friend Button */}
                 <button
                   onClick={() => setShowAddContactModal(true)}
                   className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
@@ -647,7 +638,6 @@ export default function LetsChatApp() {
                   <FiUserPlus className="text-lg" />
                 </button>
 
-                {/* Logout Button */}
                 <button
                   onClick={handleLogout}
                   className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
@@ -833,7 +823,7 @@ export default function LetsChatApp() {
           </>
         )}
 
-        {/* Requests Notification Modal (Heart Icon) */}
+        {/* Requests Notification Modal */}
         {showRequestsModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -882,7 +872,7 @@ export default function LetsChatApp() {
           </div>
         )}
 
-        {/* Profile Settings Modal (DP, Name & 5-Digit ID Update) */}
+        {/* Edit Profile Modal */}
         {showProfileModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4 text-center relative">
