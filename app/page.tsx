@@ -25,7 +25,7 @@ import {
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
-// Exact Firebase Credentials from Console
+// Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyCbUD9KOprj-tshPfD8Yz9jnhtvfFWwT-E",
   authDomain: "lets-chat-008.firebaseapp.com",
@@ -106,12 +106,12 @@ const TANGLISH_STICKERS: Record<string, string[]> = {
   ]
 };
 
-// 6-second timeout helper to prevent freeze
-const withTimeout = (promise: Promise<any>, ms: number = 6000) => {
+// நெட்வொர்க் தாமதமானாலும் தாங்கிக்கொள்ள 15 வினாடிகள் கால அவகாசம்
+const withTimeout = (promise: Promise<any>, ms: number = 15000) => {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Request timed out. Please check connection.")), ms)
+      setTimeout(() => reject(new Error("Network error. Please try again!")), ms)
     )
   ]);
 };
@@ -124,6 +124,7 @@ export default function LetsChatApp() {
   const [customGlassId, setCustomGlassId] = useState("");
   const [pin, setPin] = useState("");
   const [authError, setAuthError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [activeChat, setActiveChat] = useState<ChatContact | null>(null);
@@ -133,7 +134,6 @@ export default function LetsChatApp() {
   const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Edit Profile States
   const [editName, setEditName] = useState("");
   const [editGlassId, setEditGlassId] = useState("");
   const [profileMsg, setProfileMsg] = useState("");
@@ -163,7 +163,6 @@ export default function LetsChatApp() {
     }
   }, []);
 
-  // Listen for requests & contacts
   useEffect(() => {
     if (!currentUser) return;
 
@@ -204,7 +203,6 @@ export default function LetsChatApp() {
     };
   }, [currentUser]);
 
-  // Listen for messages in active room
   useEffect(() => {
     if (!currentUser || !activeChat) return;
 
@@ -231,16 +229,24 @@ export default function LetsChatApp() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Create Account Handler
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (!name.trim()) return setAuthError("Please enter your name.");
     if (mobile.length !== 10) return setAuthError("Please enter a valid 10-digit mobile number.");
     if (customGlassId.length !== 5) return setAuthError("Please enter a 5-digit Fancy Glass ID.");
     if (pin.length !== 4) return setAuthError("PIN must be exactly 4 digits.");
 
+    setIsSubmitting(true);
+    setAuthError("");
+
     try {
+      // 5-Digit ID பரிசோதனை
       const idCheck: any = await withTimeout(get(ref(db, `users/${customGlassId}`)));
       if (idCheck.exists()) {
+        setIsSubmitting(false);
         return setAuthError("This 5-Digit ID is already taken. Please pick another.");
       }
 
@@ -252,6 +258,7 @@ export default function LetsChatApp() {
         avatarUrl: `https://api.dicebear.com/7.x/micah/svg?seed=${customGlassId}`
       };
 
+      // டேட்டாபேஸில் பயனரைச் சேமித்தல்
       await withTimeout(set(ref(db, `users/${customGlassId}`), newUser));
       await withTimeout(set(ref(db, `mobileIndex/${mobile}`), customGlassId));
 
@@ -261,27 +268,42 @@ export default function LetsChatApp() {
       setEditGlassId(newUser.glassId);
       setAuthError("");
     } catch (err: any) {
-      setAuthError(err?.message || "Registration failed. Check network connection.");
+      setAuthError("Network error. Please try again!");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  // Login Handler
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (mobile.length !== 10) return setAuthError("Please enter your 10-digit mobile number.");
     if (pin.length !== 4) return setAuthError("Please enter your 4-digit PIN.");
+
+    setIsSubmitting(true);
+    setAuthError("");
 
     try {
       const mobileSnap: any = await withTimeout(get(ref(db, `mobileIndex/${mobile}`)));
       if (!mobileSnap.exists()) {
+        setIsSubmitting(false);
         return setAuthError("Mobile number not registered. Please switch to Register.");
       }
 
       const userGlassId = mobileSnap.val();
       const userSnap: any = await withTimeout(get(ref(db, `users/${userGlassId}`)));
-      if (!userSnap.exists()) return setAuthError("User record not found.");
+      if (!userSnap.exists()) {
+        setIsSubmitting(false);
+        return setAuthError("User record not found.");
+      }
 
       const user: UserProfile = userSnap.val();
-      if (user.pin !== pin) return setAuthError("Incorrect PIN entered.");
+      if (user.pin !== pin) {
+        setIsSubmitting(false);
+        return setAuthError("Incorrect PIN entered.");
+      }
 
       localStorage.setItem("lets_chat_active_user", JSON.stringify(user));
       setCurrentUser(user);
@@ -289,7 +311,9 @@ export default function LetsChatApp() {
       setEditGlassId(user.glassId);
       setAuthError("");
     } catch (err: any) {
-      setAuthError(err?.message || "Login failed.");
+      setAuthError("Network error. Please try again!");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -303,6 +327,7 @@ export default function LetsChatApp() {
     setCustomGlassId("");
   };
 
+  // Connection Request Handler
   const handleSendConnectionRequest = async () => {
     if (!currentUser || isSending) return;
     if (searchGlassId.trim().length !== 5) {
@@ -348,7 +373,7 @@ export default function LetsChatApp() {
     } catch (err: any) {
       setIsSending(false);
       setRequestStatus("");
-      setAddContactError(err?.message || "Error sending request.");
+      setAddContactError("Network error. Please try again!");
     }
   };
 
@@ -375,7 +400,7 @@ export default function LetsChatApp() {
 
       await withTimeout(remove(ref(db, `requests/${currentUser.glassId}/${req.fromGlassId}`)));
     } catch {
-      alert("Error accepting connection request.");
+      alert("Network error. Please try again!");
     }
   };
 
@@ -432,7 +457,7 @@ export default function LetsChatApp() {
         setShowProfileModal(false);
       }, 1200);
     } catch (err: any) {
-      setProfileMsg(err?.message || "Failed to update profile.");
+      setProfileMsg("Network error. Please try again!");
     }
   };
 
@@ -471,6 +496,7 @@ export default function LetsChatApp() {
     setShowTodModal(false);
   };
 
+  // Login / Register Form View
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
@@ -573,9 +599,16 @@ export default function LetsChatApp() {
 
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all mt-2"
+              disabled={isSubmitting}
+              className={`w-full py-3 text-white rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all mt-2 ${
+                isSubmitting ? "bg-rose-300 cursor-not-allowed" : "bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
+              }`}
             >
-              {isRegister ? "Create Account" : "Sign In"}
+              {isSubmitting
+                ? "Processing..."
+                : isRegister
+                ? "Create Account"
+                : "Sign In"}
             </button>
           </form>
         </div>
@@ -616,7 +649,6 @@ export default function LetsChatApp() {
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Heart Requests Button with Badge */}
                 <button
                   onClick={() => setShowRequestsModal(true)}
                   className="relative p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
@@ -823,7 +855,7 @@ export default function LetsChatApp() {
           </>
         )}
 
-        {/* Requests Notification Modal */}
+        {/* Requests Modal */}
         {showRequestsModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -885,7 +917,6 @@ export default function LetsChatApp() {
 
               <h4 className="font-bold text-gray-900 text-base">Edit Profile</h4>
 
-              {/* DP Change */}
               <div className="relative w-20 h-20 mx-auto">
                 <img
                   src={currentUser.avatarUrl}
@@ -991,7 +1022,7 @@ export default function LetsChatApp() {
           </div>
         )}
 
-        {/* Connect via 5-Digit ID Modal */}
+        {/* Connect Modal */}
         {showAddContactModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
