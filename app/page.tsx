@@ -25,7 +25,6 @@ import {
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
-// Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyCbUD9KOprj-tshPfD8Yz9jnhtvfFWwT-E",
   authDomain: "lets-chat-008.firebaseapp.com",
@@ -63,6 +62,7 @@ interface ChatContact {
   name: string;
   avatarUrl: string;
   lastMessage: string;
+  unread?: boolean;
 }
 
 interface IncomingRequest {
@@ -106,7 +106,6 @@ const TANGLISH_STICKERS: Record<string, string[]> = {
   ]
 };
 
-// நெட்வொர்க் தாமதமானாலும் தாங்கிக்கொள்ள 15 வினாடிகள் கால அவகாசம்
 const withTimeout = (promise: Promise<any>, ms: number = 15000) => {
   return Promise.race([
     promise,
@@ -154,6 +153,14 @@ export default function LetsChatApp() {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     const saved = localStorage.getItem("lets_chat_active_user");
     if (saved) {
       const user = JSON.parse(saved);
@@ -189,7 +196,8 @@ export default function LetsChatApp() {
           glassId: key,
           name: data[key].name,
           avatarUrl: data[key].avatarUrl,
-          lastMessage: data[key].lastMessage || "Connected"
+          lastMessage: data[key].lastMessage || "Connected",
+          unread: data[key].unread || false
         }));
         setContacts(list);
       } else {
@@ -217,6 +225,19 @@ export default function LetsChatApp() {
           ...data[k]
         }));
         setMessages(parsed);
+
+        const lastMsg = parsed[parsed.length - 1];
+        if (
+          lastMsg &&
+          lastMsg.senderId !== currentUser.glassId &&
+          document.visibilityState !== "visible" &&
+          Notification.permission === "granted"
+        ) {
+          new Notification(`${lastMsg.senderName || "New Message"}`, {
+            body: lastMsg.type === "text" ? lastMsg.content : `Sent a ${lastMsg.type}`,
+            icon: activeChat.avatarUrl
+          });
+        }
       } else {
         setMessages([]);
       }
@@ -229,7 +250,13 @@ export default function LetsChatApp() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Create Account Handler
+  const handleOpenChat = async (contact: ChatContact) => {
+    setActiveChat(contact);
+    if (currentUser && contact.unread) {
+      await set(ref(db, `contacts/${currentUser.glassId}/${contact.glassId}/unread`), false);
+    }
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -243,7 +270,6 @@ export default function LetsChatApp() {
     setAuthError("");
 
     try {
-      // 5-Digit ID பரிசோதனை
       const idCheck: any = await withTimeout(get(ref(db, `users/${customGlassId}`)));
       if (idCheck.exists()) {
         setIsSubmitting(false);
@@ -258,7 +284,6 @@ export default function LetsChatApp() {
         avatarUrl: `https://api.dicebear.com/7.x/micah/svg?seed=${customGlassId}`
       };
 
-      // டேட்டாபேஸில் பயனரைச் சேமித்தல்
       await withTimeout(set(ref(db, `users/${customGlassId}`), newUser));
       await withTimeout(set(ref(db, `mobileIndex/${mobile}`), customGlassId));
 
@@ -267,14 +292,13 @@ export default function LetsChatApp() {
       setEditName(newUser.name);
       setEditGlassId(newUser.glassId);
       setAuthError("");
-    } catch (err: any) {
+    } catch {
       setAuthError("Network error. Please try again!");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Login Handler
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -310,7 +334,7 @@ export default function LetsChatApp() {
       setEditName(user.name);
       setEditGlassId(user.glassId);
       setAuthError("");
-    } catch (err: any) {
+    } catch {
       setAuthError("Network error. Please try again!");
     } finally {
       setIsSubmitting(false);
@@ -327,7 +351,6 @@ export default function LetsChatApp() {
     setCustomGlassId("");
   };
 
-  // Connection Request Handler
   const handleSendConnectionRequest = async () => {
     if (!currentUser || isSending) return;
     if (searchGlassId.trim().length !== 5) {
@@ -370,7 +393,7 @@ export default function LetsChatApp() {
         setRequestStatus("");
         setAddContactError("");
       }, 1500);
-    } catch (err: any) {
+    } catch {
       setIsSending(false);
       setRequestStatus("");
       setAddContactError("Network error. Please try again!");
@@ -385,7 +408,8 @@ export default function LetsChatApp() {
           glassId: req.fromGlassId,
           name: req.fromName,
           avatarUrl: req.fromAvatar,
-          lastMessage: "Connected! Say Hi 👋"
+          lastMessage: "Connected! Say Hi 👋",
+          unread: false
         })
       );
 
@@ -394,7 +418,8 @@ export default function LetsChatApp() {
           glassId: currentUser.glassId,
           name: currentUser.name,
           avatarUrl: currentUser.avatarUrl,
-          lastMessage: "Connected! Say Hi 👋"
+          lastMessage: "Connected! Say Hi 👋",
+          unread: false
         })
       );
 
@@ -456,7 +481,7 @@ export default function LetsChatApp() {
         setProfileMsg("");
         setShowProfileModal(false);
       }, 1200);
-    } catch (err: any) {
+    } catch {
       setProfileMsg("Network error. Please try again!");
     }
   };
@@ -478,8 +503,12 @@ export default function LetsChatApp() {
 
     await set(newMsgRef, msgPayload);
     const preview = type === "text" ? content : `Sent a ${type}`;
+
     await set(ref(db, `contacts/${currentUser.glassId}/${activeChat.glassId}/lastMessage`), preview);
+    await set(ref(db, `contacts/${currentUser.glassId}/${activeChat.glassId}/unread`), false);
+
     await set(ref(db, `contacts/${activeChat.glassId}/${currentUser.glassId}/lastMessage`), preview);
+    await set(ref(db, `contacts/${activeChat.glassId}/${currentUser.glassId}/unread`), true);
   };
 
   const handleSendText = (e: React.FormEvent) => {
@@ -496,7 +525,6 @@ export default function LetsChatApp() {
     setShowTodModal(false);
   };
 
-  // Login / Register Form View
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
@@ -701,8 +729,8 @@ export default function LetsChatApp() {
                 contacts.map((contact) => (
                   <div
                     key={contact.glassId}
-                    onClick={() => setActiveChat(contact)}
-                    className="flex items-center gap-3 p-3 bg-white/80 hover:bg-white rounded-2xl border border-rose-100 cursor-pointer transition-all shadow-sm"
+                    onClick={() => handleOpenChat(contact)}
+                    className="flex items-center gap-3 p-3 bg-white/80 hover:bg-white rounded-2xl border border-rose-100 cursor-pointer transition-all shadow-sm relative"
                   >
                     <img
                       src={contact.avatarUrl}
@@ -716,6 +744,10 @@ export default function LetsChatApp() {
                       </div>
                       <p className="text-xs text-gray-600 truncate mt-0.5">{contact.lastMessage}</p>
                     </div>
+
+                    {contact.unread && (
+                      <div className="w-3 h-3 bg-rose-500 rounded-full border-2 border-white shadow-md animate-pulse"></div>
+                    )}
                   </div>
                 ))
               )}
