@@ -18,11 +18,13 @@ import {
   FiLogOut,
   FiArrowLeft,
   FiCheck,
-  FiCamera
+  FiCamera,
+  FiEdit2,
+  FiHeart,
+  FiX
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
-// Firebase Config விவரங்கள்
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDummyKey",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "lets-chat-app.firebaseapp.com",
@@ -102,6 +104,16 @@ const TANGLISH_STICKERS: Record<string, string[]> = {
   ]
 };
 
+// 6 வினாடிகளில் முடங்கிவிடாமல் இருக்க Timeout Promise
+const withTimeout = (promise: Promise<any>, ms: number = 6000) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Request timed out! Check your network or database rules.")), ms)
+    )
+  ]);
+};
+
 export default function LetsChatApp() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isRegister, setIsRegister] = useState(false);
@@ -116,6 +128,14 @@ export default function LetsChatApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const [incomingRequests, setIncomingRequests] = useState<IncomingRequest[]>([]);
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Edit Profile States
+  const [editName, setEditName] = useState("");
+  const [editGlassId, setEditGlassId] = useState("");
+  const [profileMsg, setProfileMsg] = useState("");
+
   const [inputMsg, setInputMsg] = useState("");
   const [showStickerDrawer, setShowStickerDrawer] = useState(false);
   const [activeStickerTab, setActiveStickerTab] = useState("Comedy");
@@ -133,10 +153,15 @@ export default function LetsChatApp() {
 
   useEffect(() => {
     const saved = localStorage.getItem("lets_chat_active_user");
-    if (saved) setCurrentUser(JSON.parse(saved));
+    if (saved) {
+      const user = JSON.parse(saved);
+      setCurrentUser(user);
+      setEditName(user.name);
+      setEditGlassId(user.glassId);
+    }
   }, []);
 
-  // ரியல்-டைமில் ரிக்வெஸ்ட் மற்றும் தொடர்புகளை கவனித்தல்
+  // Listen for incoming requests & contacts
   useEffect(() => {
     if (!currentUser) return;
 
@@ -177,7 +202,7 @@ export default function LetsChatApp() {
     };
   }, [currentUser]);
 
-  // மெசேஜ்களை ரியல்-டைமில் கவனித்தல்
+  // Listen for messages in active room
   useEffect(() => {
     if (!currentUser || !activeChat) return;
 
@@ -204,7 +229,6 @@ export default function LetsChatApp() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // புதிய கணக்கு பதிவு - Custom 5-Digit ID சரிபார்ப்புடன்
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setAuthError("Please enter your name.");
@@ -213,8 +237,7 @@ export default function LetsChatApp() {
     if (pin.length !== 4) return setAuthError("PIN must be exactly 4 digits.");
 
     try {
-      // 1. இந்த 5-Digit ID ஏற்கனவே உள்ளதா என சரிபார்த்தல்
-      const idCheck = await get(ref(db, `users/${customGlassId}`));
+      const idCheck: any = await withTimeout(get(ref(db, `users/${customGlassId}`)));
       if (idCheck.exists()) {
         return setAuthError("This 5-Digit ID is already taken. Please try another one!");
       }
@@ -227,31 +250,32 @@ export default function LetsChatApp() {
         avatarUrl: `https://api.dicebear.com/7.x/micah/svg?seed=${customGlassId}`
       };
 
-      await set(ref(db, `users/${customGlassId}`), newUser);
-      await set(ref(db, `mobileIndex/${mobile}`), customGlassId);
+      await withTimeout(set(ref(db, `users/${customGlassId}`), newUser));
+      await withTimeout(set(ref(db, `mobileIndex/${mobile}`), customGlassId));
 
       localStorage.setItem("lets_chat_active_user", JSON.stringify(newUser));
       setCurrentUser(newUser);
+      setEditName(newUser.name);
+      setEditGlassId(newUser.glassId);
       setAuthError("");
-    } catch {
-      setAuthError("Failed to register. Check database connection & rules.");
+    } catch (err: any) {
+      setAuthError(err?.message || "Failed to register. Check database rules.");
     }
   };
 
-  // லாகின் செயல்பாடு
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mobile.length !== 10) return setAuthError("Please enter your 10-digit mobile number.");
     if (pin.length !== 4) return setAuthError("Please enter your 4-digit PIN.");
 
     try {
-      const mobileSnap = await get(ref(db, `mobileIndex/${mobile}`));
+      const mobileSnap: any = await withTimeout(get(ref(db, `mobileIndex/${mobile}`)));
       if (!mobileSnap.exists()) {
         return setAuthError("Mobile number not registered. Please switch to Register.");
       }
 
       const userGlassId = mobileSnap.val();
-      const userSnap = await get(ref(db, `users/${userGlassId}`));
+      const userSnap: any = await withTimeout(get(ref(db, `users/${userGlassId}`)));
       if (!userSnap.exists()) return setAuthError("User record not found.");
 
       const user: UserProfile = userSnap.val();
@@ -259,9 +283,11 @@ export default function LetsChatApp() {
 
       localStorage.setItem("lets_chat_active_user", JSON.stringify(user));
       setCurrentUser(user);
+      setEditName(user.name);
+      setEditGlassId(user.glassId);
       setAuthError("");
-    } catch {
-      setAuthError("Failed to sign in. Verify internet connection.");
+    } catch (err: any) {
+      setAuthError(err?.message || "Failed to sign in.");
     }
   };
 
@@ -275,7 +301,7 @@ export default function LetsChatApp() {
     setCustomGlassId("");
   };
 
-  // ரிக்வெஸ்ட் அனுப்பும் செயல்பாடு
+  // ரிக்வெஸ்ட் அனுப்பும் முறை (Hang ஆகாமல் தடுக்கப்பட்டது)
   const handleSendConnectionRequest = async () => {
     if (!currentUser || isSending) return;
     if (searchGlassId.trim().length !== 5) {
@@ -289,10 +315,10 @@ export default function LetsChatApp() {
 
     setIsSending(true);
     setAddContactError("");
-    setRequestStatus("Checking user ID...");
+    setRequestStatus("Verifying ID...");
 
     try {
-      const targetUserSnap = await get(ref(db, `users/${searchGlassId}`));
+      const targetUserSnap: any = await withTimeout(get(ref(db, `users/${searchGlassId}`)));
       if (!targetUserSnap.exists()) {
         setIsSending(false);
         setRequestStatus("");
@@ -300,49 +326,54 @@ export default function LetsChatApp() {
         return;
       }
 
-      // எதிர்முனை பயனருக்கு ரிக்வெஸ்ட் அனுப்புதல்
-      await set(ref(db, `requests/${searchGlassId}/${currentUser.glassId}`), {
-        senderGlassId: currentUser.glassId,
-        senderName: currentUser.name,
-        senderAvatar: currentUser.avatarUrl,
-        timestamp: Date.now()
-      });
+      setRequestStatus("Sending request...");
+      await withTimeout(
+        set(ref(db, `requests/${searchGlassId}/${currentUser.glassId}`), {
+          senderGlassId: currentUser.glassId,
+          senderName: currentUser.name,
+          senderAvatar: currentUser.avatarUrl,
+          timestamp: Date.now()
+        })
+      );
 
       setIsSending(false);
-      setRequestStatus("Request sent successfully! Waiting for acceptance...");
+      setRequestStatus("Request sent! Waiting for acceptance...");
       setTimeout(() => {
         setShowAddContactModal(false);
         setSearchGlassId("");
         setRequestStatus("");
         setAddContactError("");
-      }, 1800);
+      }, 1500);
     } catch (err: any) {
       setIsSending(false);
       setRequestStatus("");
-      setAddContactError("Error sending request: " + (err?.message || "Check Firebase rules"));
+      setAddContactError(err?.message || "Connection timeout! Check database rules.");
     }
   };
 
-  // ரிக்வெஸ்ட்டை அக்சப்ட் செய்து இருவரது போனிலும் தொடர்புகளை இணைத்தல்
+  // ரிக்வெஸ்ட் ஏற்கும் முறை
   const handleAcceptRequest = async (req: IncomingRequest) => {
     if (!currentUser) return;
-
     try {
-      await set(ref(db, `contacts/${currentUser.glassId}/${req.fromGlassId}`), {
-        glassId: req.fromGlassId,
-        name: req.fromName,
-        avatarUrl: req.fromAvatar,
-        lastMessage: "Connected! Say Hi 👋"
-      });
+      await withTimeout(
+        set(ref(db, `contacts/${currentUser.glassId}/${req.fromGlassId}`), {
+          glassId: req.fromGlassId,
+          name: req.fromName,
+          avatarUrl: req.fromAvatar,
+          lastMessage: "Connected! Say Hi 👋"
+        })
+      );
 
-      await set(ref(db, `contacts/${req.fromGlassId}/${currentUser.glassId}`), {
-        glassId: currentUser.glassId,
-        name: currentUser.name,
-        avatarUrl: currentUser.avatarUrl,
-        lastMessage: "Connected! Say Hi 👋"
-      });
+      await withTimeout(
+        set(ref(db, `contacts/${req.fromGlassId}/${currentUser.glassId}`), {
+          glassId: currentUser.glassId,
+          name: currentUser.name,
+          avatarUrl: currentUser.avatarUrl,
+          lastMessage: "Connected! Say Hi 👋"
+        })
+      );
 
-      await remove(ref(db, `requests/${currentUser.glassId}/${req.fromGlassId}`));
+      await withTimeout(remove(ref(db, `requests/${currentUser.glassId}/${req.fromGlassId}`)));
     } catch {
       alert("Error accepting connection request.");
     }
@@ -351,6 +382,62 @@ export default function LetsChatApp() {
   const handleDeclineRequest = async (fromGlassId: string) => {
     if (!currentUser) return;
     await remove(ref(db, `requests/${currentUser.glassId}/${fromGlassId}`));
+  };
+
+  // DP (Avatar) மாற்றுதல்
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && currentUser) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const newUrl = reader.result as string;
+        const updated = { ...currentUser, avatarUrl: newUrl };
+        setCurrentUser(updated);
+        localStorage.setItem("lets_chat_active_user", JSON.stringify(updated));
+        await set(ref(db, `users/${currentUser.glassId}/avatarUrl`), newUrl);
+        setProfileMsg("Profile Picture updated successfully!");
+        setTimeout(() => setProfileMsg(""), 2000);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Name & ID சேமித்தல்
+  const handleSaveProfile = async () => {
+    if (!currentUser) return;
+    if (!editName.trim()) return setProfileMsg("Name cannot be empty.");
+    if (editGlassId.length !== 5) return setProfileMsg("Glass ID must be 5 digits.");
+
+    try {
+      // ஐடி மாற்றப்பட்டிருந்தால் மட்டும் புது ஐடி ஃப்ரீயாக உள்ளதா என பார்க்கவும்
+      if (editGlassId !== currentUser.glassId) {
+        const check: any = await withTimeout(get(ref(db, `users/${editGlassId}`)));
+        if (check.exists()) {
+          return setProfileMsg("This ID is already taken. Try another 5-digit number.");
+        }
+
+        // பழைய ஐடியை நீக்கிவிட்டு புது ஐடி உருவாக்குதல்
+        await remove(ref(db, `users/${currentUser.glassId}`));
+        await set(ref(db, `mobileIndex/${currentUser.mobile}`), editGlassId);
+      }
+
+      const updated: UserProfile = {
+        ...currentUser,
+        name: editName.trim(),
+        glassId: editGlassId
+      };
+
+      await set(ref(db, `users/${editGlassId}`), updated);
+      localStorage.setItem("lets_chat_active_user", JSON.stringify(updated));
+      setCurrentUser(updated);
+      setProfileMsg("Profile updated successfully!");
+      setTimeout(() => {
+        setProfileMsg("");
+        setShowProfileModal(false);
+      }, 1200);
+    } catch (err: any) {
+      setProfileMsg(err?.message || "Failed to update profile.");
+    }
   };
 
   const sendMessage = async (type: "text" | "sticker" | "tod_card", content: string, mode?: "Truth" | "Dare") => {
@@ -369,7 +456,6 @@ export default function LetsChatApp() {
     };
 
     await set(newMsgRef, msgPayload);
-
     const preview = type === "text" ? content : `Sent a ${type}`;
     await set(ref(db, `contacts/${currentUser.glassId}/${activeChat.glassId}/lastMessage`), preview);
     await set(ref(db, `contacts/${activeChat.glassId}/${currentUser.glassId}/lastMessage`), preview);
@@ -389,7 +475,7 @@ export default function LetsChatApp() {
     setShowTodModal(false);
   };
 
-  // Auth திரை
+  // Auth Screen
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
@@ -431,12 +517,10 @@ export default function LetsChatApp() {
           <form onSubmit={isRegister ? handleRegister : handleLogin} className="space-y-4">
             {isRegister && (
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                  Full Name <span className="text-rose-500">*</span>
-                </label>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">Full Name</label>
                 <input
                   type="text"
-                  placeholder="Enter your full name"
+                  placeholder="Enter your name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 placeholder-gray-400 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
@@ -446,9 +530,7 @@ export default function LetsChatApp() {
             )}
 
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                Mobile Number <span className="text-rose-500">*</span>
-              </label>
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">Mobile Number</label>
               <div className="flex rounded-xl overflow-hidden border border-gray-300">
                 <span className="inline-flex items-center px-3.5 bg-gray-100 text-xs font-bold text-gray-700 border-r border-gray-300">
                   +91
@@ -465,12 +547,9 @@ export default function LetsChatApp() {
               </div>
             </div>
 
-            {/* Custom 5-Digit Glass ID Option */}
             {isRegister && (
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                  Choose 5-Digit Glass ID <span className="text-rose-500">*</span>
-                </label>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">Choose 5-Digit Glass ID</label>
                 <input
                   type="text"
                   placeholder="e.g. 77777 or 12345"
@@ -480,14 +559,11 @@ export default function LetsChatApp() {
                   className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-center tracking-[0.3em] text-base font-bold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
                   required
                 />
-                <p className="text-[10px] text-gray-500 mt-1 text-center">Set your own custom 5-digit fancy ID</p>
               </div>
             )}
 
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                4-Digit PIN <span className="text-rose-500">*</span>
-              </label>
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">4-Digit PIN</label>
               <input
                 type="password"
                 inputMode="numeric"
@@ -512,61 +588,57 @@ export default function LetsChatApp() {
     );
   }
 
-  // முதன்மை பயன்பாட்டுத் திரை
+  // Dashboard / Chat Interface
   return (
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         
-        {/* வரும் ரிக்வெஸ்ட் பேனர் */}
-        {incomingRequests.length > 0 && (
-          <div className="absolute top-3 left-3 right-3 z-50 bg-white/95 border-2 border-rose-300 rounded-2xl p-3 shadow-xl space-y-2">
-            <p className="text-xs font-bold text-rose-600">New Connection Request!</p>
-            {incomingRequests.map((req) => (
-              <div key={req.fromGlassId} className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <img src={req.fromAvatar} alt={req.fromName} className="w-8 h-8 rounded-full border border-rose-200" />
-                  <div>
-                    <p className="text-xs font-bold text-gray-800">{req.fromName}</p>
-                    <p className="text-[10px] text-gray-500">ID: {req.fromGlassId}</p>
-                  </div>
-                </div>
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => handleAcceptRequest(req)}
-                    className="px-3 py-1 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-lg shadow"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    onClick={() => handleDeclineRequest(req.fromGlassId)}
-                    className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-lg"
-                  >
-                    Decline
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {!activeChat ? (
           <>
             <header className="p-4 border-b border-rose-100 flex items-center justify-between bg-white/60">
-              <div className="flex items-center gap-3">
-                <img
-                  src={currentUser.avatarUrl}
-                  alt={currentUser.name}
-                  className="w-11 h-11 rounded-full object-cover border-2 border-rose-300"
-                />
+              {/* Profile Card -> Tap to Edit Name, ID & DP */}
+              <div
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center gap-3 cursor-pointer group"
+                title="Click to change DP, Name or 5-Digit ID"
+              >
+                <div className="relative">
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.name}
+                    className="w-11 h-11 rounded-full object-cover border-2 border-rose-300 group-hover:opacity-85 transition-all"
+                  />
+                  <div className="absolute -bottom-1 -right-1 bg-rose-500 text-white p-1 rounded-full text-[9px] shadow">
+                    <FiEdit2 />
+                  </div>
+                </div>
                 <div>
-                  <h2 className="text-base font-bold text-gray-900 leading-tight">{currentUser.name}</h2>
+                  <h2 className="text-base font-bold text-gray-900 leading-tight group-hover:text-rose-600 transition-colors">
+                    {currentUser.name}
+                  </h2>
                   <span className="text-[10px] uppercase font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">
                     ID: {currentUser.glassId}
                   </span>
                 </div>
               </div>
 
+              {/* Action Buttons */}
               <div className="flex items-center gap-2">
+                {/* Heart / Request Notification Icon */}
+                <button
+                  onClick={() => setShowRequestsModal(true)}
+                  className="relative p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
+                  title="Incoming Requests"
+                >
+                  <FiHeart className="text-lg fill-rose-500/20" />
+                  {incomingRequests.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center animate-bounce shadow">
+                      {incomingRequests.length}
+                    </span>
+                  )}
+                </button>
+
+                {/* Add Friend Button */}
                 <button
                   onClick={() => setShowAddContactModal(true)}
                   className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
@@ -574,6 +646,8 @@ export default function LetsChatApp() {
                 >
                   <FiUserPlus className="text-lg" />
                 </button>
+
+                {/* Logout Button */}
                 <button
                   onClick={handleLogout}
                   className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
@@ -592,7 +666,7 @@ export default function LetsChatApp() {
                   </div>
                   <h3 className="font-bold text-gray-800 text-base">Zero Contacts</h3>
                   <p className="text-xs text-gray-600 max-w-xs">
-                    Your account is private. Share your 5-digit Glass ID (<strong>{currentUser.glassId}</strong>) or add a friend's ID to start chatting.
+                    Your account is private. Share your 5-digit Glass ID (<strong>{currentUser.glassId}</strong>) or add a friend's ID to begin chatting.
                   </p>
                   <button
                     onClick={() => setShowAddContactModal(true)}
@@ -757,6 +831,120 @@ export default function LetsChatApp() {
               </button>
             </form>
           </>
+        )}
+
+        {/* Requests Notification Modal (Heart Icon) */}
+        {showRequestsModal && (
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b pb-2">
+                <div className="flex items-center gap-2">
+                  <FiHeart className="text-rose-500 fill-rose-500" />
+                  <h4 className="font-bold text-gray-900 text-sm">Connection Requests</h4>
+                </div>
+                <button onClick={() => setShowRequestsModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <FiX className="text-lg" />
+                </button>
+              </div>
+
+              {incomingRequests.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-4">No pending connection requests right now.</p>
+              ) : (
+                <div className="space-y-3 max-h-60 overflow-y-auto">
+                  {incomingRequests.map((req) => (
+                    <div key={req.fromGlassId} className="flex items-center justify-between p-2.5 bg-rose-50/70 rounded-2xl border border-rose-100">
+                      <div className="flex items-center gap-2">
+                        <img src={req.fromAvatar} alt={req.fromName} className="w-9 h-9 rounded-full object-cover border border-rose-300" />
+                        <div>
+                          <p className="text-xs font-bold text-gray-800">{req.fromName}</p>
+                          <p className="text-[10px] text-rose-500 font-bold">ID: {req.fromGlassId}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleAcceptRequest(req)}
+                          className="px-2.5 py-1 bg-rose-500 text-white text-[11px] font-bold rounded-lg shadow hover:bg-rose-600"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          onClick={() => handleDeclineRequest(req.fromGlassId)}
+                          className="px-2 py-1 bg-gray-200 text-gray-700 text-[11px] font-bold rounded-lg hover:bg-gray-300"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Profile Settings Modal (DP, Name & 5-Digit ID Update) */}
+        {showProfileModal && (
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4 text-center relative">
+              <button
+                onClick={() => { setShowProfileModal(false); setProfileMsg(""); }}
+                className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 rounded-full"
+              >
+                <FiX className="text-lg" />
+              </button>
+
+              <h4 className="font-bold text-gray-900 text-base">Edit Profile</h4>
+
+              {/* DP Change */}
+              <div className="relative w-20 h-20 mx-auto">
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.name}
+                  className="w-full h-full rounded-full object-cover border-2 border-rose-400 shadow-md"
+                />
+                <label className="absolute bottom-0 right-0 p-1.5 bg-rose-500 text-white rounded-full cursor-pointer shadow hover:bg-rose-600">
+                  <FiCamera className="text-xs" />
+                  <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                </label>
+              </div>
+
+              {profileMsg && (
+                <p className="text-[11px] font-bold text-rose-600 bg-rose-50 p-2 rounded-xl border border-rose-100">
+                  {profileMsg}
+                </p>
+              )}
+
+              <div className="space-y-3 text-left">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-600 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-600 mb-1">5-Digit Glass ID</label>
+                  <input
+                    type="text"
+                    value={editGlassId}
+                    onChange={(e) => setEditGlassId(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                    maxLength={5}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-center text-sm font-bold tracking-widest text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleSaveProfile}
+                className="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl shadow active:scale-95 transition-all"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Truth or Dare Modal */}
