@@ -39,6 +39,9 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getDatabase(app);
 
+// Unique build tag to force cache invalidation on standalone PWA
+const APP_VERSION = "2.1.0";
+
 interface UserProfile {
   name: string;
   mobile: string;
@@ -152,9 +155,28 @@ export default function LetsChatApp() {
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
+  // Auto Cache Buster & Service Worker Update Check
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
-      if (Notification.permission === "default") {
+    if (typeof window !== "undefined") {
+      const storedVersion = localStorage.getItem("lets_chat_app_version");
+      if (storedVersion !== APP_VERSION) {
+        localStorage.setItem("lets_chat_app_version", APP_VERSION);
+        if ("caches" in window) {
+          caches.keys().then((names) => {
+            names.forEach((name) => caches.delete(name));
+          });
+        }
+      }
+
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (let registration of registrations) {
+            registration.update();
+          }
+        });
+      }
+
+      if ("Notification" in window && Notification.permission === "default") {
         Notification.requestPermission();
       }
     }
@@ -887,7 +909,6 @@ export default function LetsChatApp() {
           </>
         )}
 
-        {/* Requests Modal */}
         {showRequestsModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -936,7 +957,6 @@ export default function LetsChatApp() {
           </div>
         )}
 
-        {/* Edit Profile Modal */}
         {showProfileModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4 text-center relative">
@@ -1000,7 +1020,6 @@ export default function LetsChatApp() {
           </div>
         )}
 
-        {/* Truth or Dare Modal */}
         {showTodModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -1054,7 +1073,6 @@ export default function LetsChatApp() {
           </div>
         )}
 
-        {/* Connect Modal */}
         {showAddContactModal && (
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
