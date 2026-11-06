@@ -8,7 +8,9 @@ import {
   FiLogOut,
   FiArrowLeft,
   FiCheck,
-  FiCamera
+  FiCamera,
+  FiEdit2,
+  FiX
 } from "react-icons/fi";
 import { FaDice } from "react-icons/fa";
 
@@ -24,12 +26,10 @@ interface ChatMessage {
   id: string;
   senderId: string;
   senderName: string;
-  type: "text" | "sticker" | "tod_card" | "tod_response";
+  type: "text" | "sticker" | "tod_card";
   content: string;
-  subContent?: string;
   todType?: "Truth" | "Dare";
   timestamp: string;
-  status: "sent" | "delivered" | "read";
 }
 
 interface ChatContact {
@@ -38,7 +38,6 @@ interface ChatContact {
   name: string;
   avatarUrl: string;
   lastMessage: string;
-  unreadCount: number;
 }
 
 const TANGLISH_STICKERS: Record<string, string[]> = {
@@ -95,9 +94,12 @@ export default function LetsChatApp() {
   const [showTodModal, setShowTodModal] = useState(false);
   const [todType, setTodType] = useState<"Truth" | "Dare">("Truth");
   const [customTodQuestion, setCustomTodQuestion] = useState("");
+
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [searchGlassId, setSearchGlassId] = useState("");
   const [addContactError, setAddContactError] = useState("");
+
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -113,20 +115,30 @@ export default function LetsChatApp() {
   }, [messages, activeChat]);
 
   const handleMobileInput = (val: string) => {
-    const numeric = val.replace(/\D/g, "");
-    if (numeric.length <= 10) setMobile(numeric);
+    const num = val.replace(/\D/g, "");
+    if (num.length <= 10) setMobile(num);
   };
 
   const handlePinInput = (val: string) => {
-    const numeric = val.replace(/\D/g, "");
-    if (numeric.length <= 4) setPin(numeric);
+    const num = val.replace(/\D/g, "");
+    if (num.length <= 4) setPin(num);
   };
 
-  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>, isInsideApp = false) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => setAvatarPreview(reader.result as string);
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        if (isInsideApp && currentUser) {
+          const updated = { ...currentUser, avatarUrl: result };
+          setCurrentUser(updated);
+          localStorage.setItem("lets_chat_active_user", JSON.stringify(updated));
+          localStorage.setItem(`user_db_${currentUser.mobile}`, JSON.stringify(updated));
+        } else {
+          setAvatarPreview(result);
+        }
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -183,9 +195,8 @@ export default function LetsChatApp() {
   };
 
   const sendDirectMessage = (
-    type: "text" | "sticker" | "tod_card" | "tod_response",
+    type: "text" | "sticker" | "tod_card",
     content: string,
-    subContent?: string,
     mode?: "Truth" | "Dare"
   ) => {
     if (!activeChat || !currentUser) return;
@@ -196,10 +207,8 @@ export default function LetsChatApp() {
       senderName: currentUser.name,
       type,
       content,
-      subContent,
       todType: mode,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      status: "read"
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     };
 
     setMessages((prev) => ({
@@ -210,7 +219,7 @@ export default function LetsChatApp() {
     setContacts((prev) =>
       prev.map((c) =>
         c.glassId === activeChat.glassId
-          ? { ...c, lastMessage: type === "text" ? content : `Sent a ${type}` }
+          ? { ...c, lastMessage: type === "text" ? content : `Sent ${type}` }
           : c
       )
     );
@@ -225,12 +234,12 @@ export default function LetsChatApp() {
 
   const handleSendCustomTod = () => {
     if (!customTodQuestion.trim()) return;
-    sendDirectMessage("tod_card", customTodQuestion.trim(), undefined, todType);
+    sendDirectMessage("tod_card", customTodQuestion.trim(), todType);
     setCustomTodQuestion("");
     setShowTodModal(false);
   };
 
-  const handleSendConnectionRequest = () => {
+  const handleAddFriend = () => {
     if (searchGlassId.trim().length !== 5) {
       setAddContactError("Enter a valid 5-digit Glass ID.");
       return;
@@ -240,16 +249,16 @@ export default function LetsChatApp() {
       return;
     }
 
-    const newFriend: ChatContact = {
+    const newContact: ChatContact = {
       id: Date.now().toString(),
       glassId: searchGlassId,
       name: `User ${searchGlassId}`,
       avatarUrl: `https://api.dicebear.com/7.x/micah/svg?seed=${searchGlassId}`,
-      lastMessage: "Connected! Say Hi 👋",
-      unreadCount: 0
+      lastMessage: "Connected! Say Hi 👋"
     };
 
-    setContacts((prev) => [...prev, newFriend]);
+    setContacts((prev) => [...prev, newContact]);
+    setActiveChat(newContact);
     setShowAddContactModal(false);
     setSearchGlassId("");
     setAddContactError("");
@@ -357,7 +366,7 @@ export default function LetsChatApp() {
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={handleAvatarFile}
+                    onChange={(e) => handleAvatarFile(e, false)}
                     className="text-xs text-rose-900 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:bg-rose-500 file:text-white cursor-pointer"
                   />
                 </div>
@@ -382,19 +391,28 @@ export default function LetsChatApp() {
         {!activeChat ? (
           <>
             <header className="p-4 border-b border-rose-100 flex items-center justify-between bg-white/40">
-              <div className="flex items-center gap-3">
-                <img
-                  src={currentUser.avatarUrl}
-                  alt={currentUser.name}
-                  className="w-11 h-11 rounded-full object-cover border-2 border-rose-300"
-                />
-                <div>
-                  <h2 className="text-base font-bold text-gray-800 leading-tight">{currentUser.name}</h2>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] uppercase font-bold text-rose-500 bg-rose-100/80 px-2 py-0.5 rounded-full">
-                      ID: {currentUser.glassId}
-                    </span>
+              <div
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center gap-3 cursor-pointer group"
+                title="Click to view & change profile picture"
+              >
+                <div className="relative">
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.name}
+                    className="w-11 h-11 rounded-full object-cover border-2 border-rose-300 group-hover:opacity-80 transition-all"
+                  />
+                  <div className="absolute -bottom-1 -right-1 bg-rose-500 text-white p-1 rounded-full text-[9px] shadow">
+                    <FiEdit2 />
                   </div>
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-800 leading-tight group-hover:text-rose-600 transition-colors">
+                    {currentUser.name}
+                  </h2>
+                  <span className="text-[10px] uppercase font-bold text-rose-500 bg-rose-100/80 px-2 py-0.5 rounded-full">
+                    ID: {currentUser.glassId}
+                  </span>
                 </div>
               </div>
 
@@ -480,7 +498,7 @@ export default function LetsChatApp() {
 
               <button
                 onClick={() => setShowTodModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full text-xs font-bold transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full text-xs font-bold transition-all shadow-sm"
               >
                 <FaDice className="text-sm" /> Truth / Dare
               </button>
@@ -573,6 +591,7 @@ export default function LetsChatApp() {
                 type="button"
                 onClick={() => setShowStickerDrawer((prev) => !prev)}
                 className="p-2.5 bg-rose-100/70 hover:bg-rose-200 text-rose-600 rounded-full transition-all"
+                title="Stickers"
               >
                 <FiSmile className="text-lg" />
               </button>
@@ -595,6 +614,42 @@ export default function LetsChatApp() {
           </>
         )}
 
+        {/* Profile Picture Update Modal */}
+        {showProfileModal && (
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+            <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4 text-center relative">
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 rounded-full"
+              >
+                <FiX className="text-lg" />
+              </button>
+              <h4 className="font-bold text-gray-800 text-base">Update Profile Picture</h4>
+              <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border-2 border-rose-400 shadow-md">
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <p className="text-xs text-gray-500">Pick a new photo to update your avatar</p>
+              <label className="block w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold rounded-xl cursor-pointer shadow active:scale-95 transition-all">
+                Choose New Picture
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    handleAvatarFile(e, true);
+                    setShowProfileModal(false);
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {/* Truth or Dare Modal */}
         {showTodModal && (
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -621,7 +676,7 @@ export default function LetsChatApp() {
               </div>
 
               <textarea
-                placeholder={`Type your custom ${todType} question here...`}
+                placeholder={`Type your custom ${todType} question...`}
                 value={customTodQuestion}
                 onChange={(e) => setCustomTodQuestion(e.target.value)}
                 rows={3}
@@ -641,13 +696,14 @@ export default function LetsChatApp() {
                   onClick={handleSendCustomTod}
                   className="flex-1 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold rounded-xl shadow"
                 >
-                  Send Task
+                  Send Challenge
                 </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* Add Connection Modal */}
         {showAddContactModal && (
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-center justify-center p-4">
             <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
@@ -673,10 +729,10 @@ export default function LetsChatApp() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleSendConnectionRequest}
+                  onClick={handleAddFriend}
                   className="flex-1 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold rounded-xl shadow"
                 >
-                  Connect
+                  Connect & Chat
                 </button>
               </div>
             </div>
