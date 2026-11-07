@@ -674,7 +674,6 @@ export default function LetsChatApp() {
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
-      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       
       
         <div className="w-full max-w-sm bg-white/90 backdrop-blur-2xl border border-rose-200/60 p-6 rounded-3xl shadow-2xl space-y-5">
@@ -799,7 +798,6 @@ export default function LetsChatApp() {
 
   return (
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
-      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         
@@ -982,13 +980,9 @@ export default function LetsChatApp() {
                 return (
                     <div
                       key={msg.id}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setSelectedMsgForDelete(msg);
-                      }}
+                      
                       className={`flex flex-col group relative ${isMe ? "items-end" : "items-start"}`}
                     >
-      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       
                     {msg.type === "tod_card" ? (
                       <div className="max-w-[85%] bg-gradient-to-r from-rose-500 to-pink-500 text-white p-3.5 rounded-2xl shadow-md space-y-2">
@@ -998,7 +992,6 @@ export default function LetsChatApp() {
                             setSelectedMsgForDelete(msg);
                           }}
                           className="absolute -top-2 right-0 bg-white text-rose-600 rounded-full p-1 shadow-md opacity-80 hover:opacity-100 transition-opacity"
-                          title="Delete message"
                         >
                           <FiTrash2 size={12} />
                         </button>
@@ -1026,13 +1019,7 @@ export default function LetsChatApp() {
                           ) : (
                             <div className="flex items-start justify-between gap-2">
                               <p>{msg.content}</p>
-                              <button
-                                onClick={() => setSelectedMsgForDelete(msg)}
-                                className="opacity-0 group-hover:opacity-100 hover:opacity-100 p-0.5 text-xs transition-opacity"
-                                title="Delete"
-                              >
-                                <FiTrash2 className="text-[10px]" />
-                              </button>
+                              
                             </div>
                           )}
                         <div className="flex items-center justify-end gap-1 mt-1">
@@ -1351,7 +1338,6 @@ export default function LetsChatApp() {
     </div>
   );
 }
-
 
 
 
