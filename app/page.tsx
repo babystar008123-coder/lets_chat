@@ -326,6 +326,7 @@ export default function LetsChatApp() {
 
   
     // Contact Delete Function
+    // Contact Delete Function
   const handleDeleteContact = async (contactGlassId: string) => {
     if (!currentUser) return;
     if (window.confirm("Are you sure you want to delete this contact?")) {
@@ -344,6 +345,31 @@ export default function LetsChatApp() {
   // Delete for Me (Local + Session state)
   const handleDeleteMessageForMe = (msgId: string) => {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setSelectedMsgForDelete(null);
+  };
+
+  // Delete for Everyone (Firebase Database Update)
+  const handleDeleteMessageForEveryone = async (msgId: string) => {
+    if (!currentUser || !activeChat) return;
+    try {
+      const { update, ref: dbRef } = await import("firebase/database");
+      const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
+      await update(dbRef(db, `chats/${roomId}/messages/${msgId}`), {
+        isDeleted: true,
+        content: "🚫 This message was deleted",
+        type: "text",
+        todType: null
+      });
+      // Update local state immediately
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId ? { ...m, isDeleted: true, content: "🚫 This message was deleted" } : m
+        )
+      );
+    } catch (err) {
+      console.error("Delete for everyone error:", err);
+      alert("Failed to delete message. Please try again.");
+    }
     setSelectedMsgForDelete(null);
   };
 
@@ -793,7 +819,7 @@ export default function LetsChatApp() {
           </div>
         </div>
       )}
-                {/* 3-Dots Message Action Sheet */}
+                      {/* 3-Dots Message Action Sheet */}
       {selectedMsgForDelete && (
         <div
           className="fixed inset-0 z-[999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
@@ -1400,6 +1426,7 @@ export default function LetsChatApp() {
     </div>
   );
 }
+
 
 
 
