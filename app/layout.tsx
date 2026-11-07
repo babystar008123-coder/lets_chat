@@ -3,20 +3,21 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "LetsChat",
-  description: "Private 1-on-1 Messenger",
+  description: "LetsChat Web Application",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "LetsChat"
-  }
+    title: "LetsChat",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f43f5e",
+  themeColor: "#FFF2F5",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -27,24 +28,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="manifest" href="/manifest.json" />
-        <link rel="icon" href="/icon-192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body>
+      <body className="bg-[#FFF2F5] antialiased overflow-x-hidden">
         {children}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                    .catch(err => console.error('SW Error:', err));
-                });
-              }
-            `,
-          }}
-        />
       </body>
     </html>
   );

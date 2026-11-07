@@ -25,6 +25,7 @@ import {
   FiX,
   FiDownload
 } from "react-icons/fi";
+import { FiMoreVertical } from 'react-icons/fi';
 import { FiTrash2 } from 'react-icons/fi';
 import { FaDice } from "react-icons/fa";
 
@@ -789,7 +790,54 @@ export default function LetsChatApp() {
           </div>
         </div>
       )}
-    </main>
+          {/* 3-Dots Message Action Sheet */}
+      {selectedMsgForDelete && (
+        <div
+          className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/50 backdrop-blur-xs p-4"
+          onClick={() => setSelectedMsgForDelete(null)}
+        >
+          <div
+            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-2.5 animate-in fade-in slide-in-from-bottom duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-1"></div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center mb-1">
+              Message Options
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleDeleteMessageForMe(selectedMsgForDelete.id);
+              }}
+              className="w-full py-3 rounded-2xl bg-gray-50 text-gray-800 font-semibold text-xs text-center hover:bg-gray-100 active:scale-98 transition-all"
+            >
+              Delete for me
+            </button>
+
+            {selectedMsgForDelete.senderId === currentUser?.glassId && !selectedMsgForDelete.isDeleted && (
+              <button
+                type="button"
+                onClick={() => {
+                  handleDeleteMessageForEveryone(selectedMsgForDelete.id);
+                }}
+                className="w-full py-3 rounded-2xl bg-rose-50 text-rose-600 font-bold text-xs text-center hover:bg-rose-100 active:scale-98 transition-all"
+              >
+                Delete for everyone
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setSelectedMsgForDelete(null)}
+              className="w-full py-2.5 text-gray-400 font-semibold text-xs text-center mt-1 hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+</main>
     );
   }
 
@@ -1036,6 +1084,17 @@ export default function LetsChatApp() {
                             {msg.timestamp}
                           </span>
                           {isMe && <FiCheck className="text-[10px] text-rose-200" />}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedMsgForDelete(msg);
+                              }}
+                              className="p-1 rounded-full text-gray-400 hover:text-rose-600 transition-colors ml-1"
+                              title="Message Options"
+                            >
+                              <FiMoreVertical className="text-xs" />
+                            </button>
                         </div>
                       </div>
                     )}
@@ -1336,6 +1395,7 @@ export default function LetsChatApp() {
     </div>
   );
 }
+
 
 
 
