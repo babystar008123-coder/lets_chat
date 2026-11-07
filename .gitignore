@@ -7,3 +7,6 @@ yarn-error.log*
 .vercel
 .vercel
 .env*
+
+# Local Netlify folder
+.netlify

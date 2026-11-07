@@ -7,15 +7,15 @@
     if (perm === "granted" && "serviceWorker" in navigator) {
       const reg = await navigator.serviceWorker.ready;
       reg.showNotification("LetsChat Active 🔔", {
-        body: "Lockscreen and multi-app notifications are now ready!",
+        body: "Notifications enabled! You will receive alerts when locked or in other apps.",
         icon: "/icon-192x192.png",
         vibrate: [200, 100, 200],
-        tag: "letschat-perm-ok",
+        tag: "letschat-perm",
       });
       return true;
     }
   } catch (e) {
-    console.error("Error requesting notification permission:", e);
+    console.error("Error requesting permission:", e);
   }
   return false;
 }
@@ -29,6 +29,7 @@ export function triggerLockscreenNotification(senderName: string, content: strin
     return;
   }
 
+  // Trigger whenever user is not actively on the tab (screen locked or in YouTube)
   if (document.hidden) {
     if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({
@@ -43,9 +44,9 @@ export function triggerLockscreenNotification(senderName: string, content: strin
           icon: "/icon-192x192.png",
           badge: "/icon-192x192.png",
           vibrate: [300, 100, 300, 100, 300],
-          tag: "letschat-msg",
+          tag: "letschat-priority-msg",
           renotify: true,
-          requireInteraction: true,
+          requireInteraction: true
         });
       });
     }

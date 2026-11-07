@@ -6,7 +6,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(clients.claim());
 });
 
-// Listener for messages sent from the page while backgrounded or locked
+// Listener when message arrives while tab is hidden/locked
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SHOW_NOTIFICATION") {
     const { title, body } = event.data;
@@ -18,14 +18,13 @@ self.addEventListener("message", (event) => {
       tag: "letschat-priority-msg",
       renotify: true,
       requireInteraction: true,
-      data: {
-        url: "/"
-      }
+      data: { url: "/" }
     };
     self.registration.showNotification(title || "LetsChat", options);
   }
 });
 
+// Native push listener
 self.addEventListener("push", function (event) {
   let title = "LetsChat";
   let body = "You have a new message!";
@@ -47,9 +46,7 @@ self.addEventListener("push", function (event) {
     tag: "letschat-priority-msg",
     renotify: true,
     requireInteraction: true,
-    data: {
-      url: "/"
-    }
+    data: { url: "/" }
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
