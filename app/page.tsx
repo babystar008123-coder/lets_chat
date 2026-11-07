@@ -1,8 +1,7 @@
-﻿import { registerAndInitNotifications, requestNotificationPermission, triggerLockscreenNotification } from '@/lib/notificationManager';
-import { requestNotificationPermission, triggerLockscreenNotification } from '@/lib/notificationManager';
-import MessageActionModal from '@/components/MessageActionModal';
-"use client";
+﻿"use client";
 import SplashScreen from "@/components/SplashScreen";
+import MessageActionModal from "@/components/MessageActionModal";
+import { registerAndInitNotifications, requestNotificationPermission, triggerLockscreenNotification } from "@/lib/notificationManager";
 import SwipeableMessage from "@/components/SwipeableMessage";
 import React, { useState, useRef, useEffect } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
@@ -1425,7 +1424,6 @@ export default function LetsChatApp() {
     </div>
   );
 }
-
 
 
 
