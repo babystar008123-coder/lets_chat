@@ -325,9 +325,10 @@ export default function LetsChatApp() {
   }, [messages]);
 
   
+    // Contact Delete Function
   const handleDeleteContact = async (contactGlassId: string) => {
     if (!currentUser) return;
-    if (confirm("Are you sure you want to delete this contact and conversation?")) {
+    if (window.confirm("Are you sure you want to delete this contact?")) {
       try {
         const { remove, ref: dbRef } = await import("firebase/database");
         await remove(dbRef(db, `contacts/${currentUser.glassId}/${contactGlassId}`));
@@ -340,8 +341,34 @@ export default function LetsChatApp() {
     }
   };
 
+  // Delete for Me (Local + Session state)
   const handleDeleteMessageForMe = (msgId: string) => {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setSelectedMsgForDelete(null);
+  };
+
+  // Delete for Everyone (Firebase Database Update)
+  const handleDeleteMessageForEveryone = async (msgId: string) => {
+    if (!currentUser || !activeChat) return;
+    try {
+      const { update, ref: dbRef } = await import("firebase/database");
+      const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
+      await update(dbRef(db, `chats/${roomId}/messages/${msgId}`), {
+        isDeleted: true,
+        content: "🚫 This message was deleted",
+        type: "text",
+        todType: null
+      });
+      // Update local state immediately
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId ? { ...m, isDeleted: true, content: "🚫 This message was deleted" } : m
+        )
+      );
+    } catch (err) {
+      console.error("Delete for everyone error:", err);
+      alert("Failed to delete message. Please try again.");
+    }
     setSelectedMsgForDelete(null);
   };
 
@@ -790,27 +817,28 @@ export default function LetsChatApp() {
           </div>
         </div>
       )}
-          {/* 3-Dots Message Action Sheet */}
+                {/* 3-Dots Message Action Sheet */}
       {selectedMsgForDelete && (
         <div
-          className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/50 backdrop-blur-xs p-4"
+          className="fixed inset-0 z-[999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
           onClick={() => setSelectedMsgForDelete(null)}
         >
           <div
-            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-2.5 animate-in fade-in slide-in-from-bottom duration-200"
+            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-1"></div>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center mb-1">
+            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-1"></div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">
               Message Options
             </p>
 
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 handleDeleteMessageForMe(selectedMsgForDelete.id);
               }}
-              className="w-full py-3 rounded-2xl bg-gray-50 text-gray-800 font-semibold text-xs text-center hover:bg-gray-100 active:scale-98 transition-all"
+              className="w-full py-3.5 rounded-2xl bg-gray-100 active:bg-gray-200 text-gray-800 font-bold text-xs text-center transition-all"
             >
               Delete for me
             </button>
@@ -818,10 +846,11 @@ export default function LetsChatApp() {
             {selectedMsgForDelete.senderId === currentUser?.glassId && !selectedMsgForDelete.isDeleted && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   handleDeleteMessageForEveryone(selectedMsgForDelete.id);
                 }}
-                className="w-full py-3 rounded-2xl bg-rose-50 text-rose-600 font-bold text-xs text-center hover:bg-rose-100 active:scale-98 transition-all"
+                className="w-full py-3.5 rounded-2xl bg-rose-50 active:bg-rose-100 text-rose-600 font-black text-xs text-center border border-rose-200 transition-all"
               >
                 Delete for everyone
               </button>
@@ -830,7 +859,7 @@ export default function LetsChatApp() {
             <button
               type="button"
               onClick={() => setSelectedMsgForDelete(null)}
-              className="w-full py-2.5 text-gray-400 font-semibold text-xs text-center mt-1 hover:text-gray-600"
+              className="w-full py-2.5 text-gray-400 font-bold text-xs text-center mt-1"
             >
               Cancel
             </button>
@@ -1065,7 +1094,7 @@ export default function LetsChatApp() {
                             : "bg-white text-gray-900 rounded-bl-none border border-rose-100"
                         }`}
                       >
-                        {msg.isDeleted ? (
+                        {false ? (
                             <p className="italic text-xs opacity-75">🚫 This message was deleted</p>
                           ) : (
                             <div className="flex items-start justify-between gap-2">
@@ -1395,6 +1424,7 @@ export default function LetsChatApp() {
     </div>
   );
 }
+
 
 
 
