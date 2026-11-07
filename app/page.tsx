@@ -325,10 +325,30 @@ export default function LetsChatApp() {
   }, [messages]);
 
   
-    // Contact Delete Function
-    // Contact Delete Function
-    // Contact Delete Function
-    // Contact Delete Function
+      // Swipe State
+  const [swipeOffset, setSwipeOffset] = useState<{ [id: string]: number }>({});
+  const touchStartX = useRef<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent, msgId: string) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent, msgId: string) => {
+    const diff = e.touches[0].clientX - touchStartX.current;
+    if (diff > 0 && diff < 120) {
+      setSwipeOffset((prev) => ({ ...prev, [msgId]: diff }));
+    }
+  };
+
+  const handleTouchEnd = (msg: ChatMessage) => {
+    const offset = swipeOffset[msg.id] || 0;
+    if (offset > 60) {
+      setReplyingTo(msg);
+    }
+    setSwipeOffset((prev) => ({ ...prev, [msg.id]: 0 }));
+  };
+
+  // Contact Delete
   const handleDeleteContact = async (contactGlassId: string) => {
     if (!currentUser) return;
     if (!window.confirm("Are you sure you want to delete this contact?")) return;
@@ -336,16 +356,13 @@ export default function LetsChatApp() {
       const { ref: dbRef, remove } = await import("firebase/database");
       await remove(dbRef(db, `contacts/${currentUser.glassId}/${contactGlassId}`));
       setContacts((prev) => prev.filter((c) => c.glassId !== contactGlassId));
-      if (activeChat?.glassId === contactGlassId) {
-        setActiveChat(null);
-      }
+      if (activeChat?.glassId === contactGlassId) setActiveChat(null);
     } catch (err) {
-      console.error("Delete contact error:", err);
-      alert("Error deleting contact: " + err);
+      console.error(err);
     }
   };
 
-  // Delete for Me
+  // Delete for You
   const handleDeleteMessageForMe = (msgId: string) => {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
     setSelectedMsgForDelete(null);
@@ -354,38 +371,29 @@ export default function LetsChatApp() {
   // Delete for Everyone
   const handleDeleteMessageForEveryone = async (msgId: string) => {
     if (!currentUser || !activeChat) return;
-    const targetMsgId = msgId;
+    const targetId = msgId;
     const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
-    
     try {
       const { ref: dbRef, update } = await import("firebase/database");
-      const messageRef = dbRef(db, `chats/${roomId}/messages/${targetMsgId}`);
-      
-      await update(messageRef, {
+      await update(dbRef(db, `chats/${roomId}/messages/${targetId}`), {
         isDeleted: true,
         content: "🚫 This message was deleted",
         type: "text",
         todType: null
       });
-
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === targetMsgId
+          m.id === targetId
             ? { ...m, isDeleted: true, content: "🚫 This message was deleted", type: "text", todType: undefined }
             : m
         )
       );
-      setSelectedMsgForDelete(null);
-    } catch (err: any) {
-      console.error("Delete for everyone error:", err);
-      alert("Delete failed: " + (err?.message || err));
-      setSelectedMsgForDelete(null);
+    } catch (err) {
+      console.error(err);
+      alert("Delete failed: " + err);
     }
+    setSelectedMsgForDelete(null);
   };
-
-
-
-  // Delete for Everyone (Firebase Database Update)
 
   const handleOpenChat = async (contact: ChatContact) => {
     setActiveChat(contact);
@@ -784,7 +792,7 @@ export default function LetsChatApp() {
             {/* Delete Message Confirmation Modal */}
       {selectedMsgForDelete && (
         <div
-          className="fixed inset-0 z-[999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
+          className="fixed inset-0 z-[9999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
           onClick={() => setSelectedMsgForDelete(null)}
         >
           <div
@@ -808,7 +816,7 @@ export default function LetsChatApp() {
               }}
               className="w-full py-3.5 rounded-2xl bg-gray-100 active:bg-gray-200 text-gray-800 font-bold text-xs text-center transition-all cursor-pointer"
             >
-              Delete for me
+              Delete for you
             </button>
 
             {selectedMsgForDelete.senderId === currentUser?.glassId && !selectedMsgForDelete.isDeleted && (
@@ -842,7 +850,7 @@ export default function LetsChatApp() {
                       {/* 3-Dots Message Action Sheet */}
       {selectedMsgForDelete && (
         <div
-          className="fixed inset-0 z-[999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
+          className="fixed inset-0 z-[9999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
           onClick={() => setSelectedMsgForDelete(null)}
         >
           <div
@@ -866,7 +874,7 @@ export default function LetsChatApp() {
               }}
               className="w-full py-3.5 rounded-2xl bg-gray-100 active:bg-gray-200 text-gray-800 font-bold text-xs text-center transition-all cursor-pointer"
             >
-              Delete for me
+              Delete for you
             </button>
 
             {selectedMsgForDelete.senderId === currentUser?.glassId && !selectedMsgForDelete.isDeleted && (
