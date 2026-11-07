@@ -1,4 +1,5 @@
-﻿import { requestNotificationPermission, triggerLockscreenNotification } from '@/lib/notificationManager';
+﻿import { registerAndInitNotifications, requestNotificationPermission, triggerLockscreenNotification } from '@/lib/notificationManager';
+import { requestNotificationPermission, triggerLockscreenNotification } from '@/lib/notificationManager';
 import MessageActionModal from '@/components/MessageActionModal';
 "use client";
 import SplashScreen from "@/components/SplashScreen";
@@ -129,6 +130,7 @@ export default function LetsChatApp() {
   const [contactToDelete, setContactToDelete] = useState<any>(null);
 
   useEffect(() => {
+    registerAndInitNotifications();
     if (typeof window !== "undefined" && "Notification" in window) {
       if (Notification.permission === "default") {
         Notification.requestPermission();
@@ -180,6 +182,7 @@ export default function LetsChatApp() {
 
   // PWA பிடிபடும் நிகழ்வு
   useEffect(() => {
+    registerAndInitNotifications();
     const handlePrompt = (e: any) => {
       e.preventDefault();
       setInstallPromptEvent(e);
@@ -217,6 +220,7 @@ export default function LetsChatApp() {
   };
 
   useEffect(() => {
+    registerAndInitNotifications();
     const saved = localStorage.getItem("lets_chat_active_user");
     if (saved) {
       const user = JSON.parse(saved);
@@ -227,6 +231,7 @@ export default function LetsChatApp() {
   }, []);
 
   useEffect(() => {
+    registerAndInitNotifications();
     if (!currentUser) return;
 
     const reqRef = ref(db, `requests/${currentUser.glassId}`);
@@ -269,6 +274,7 @@ export default function LetsChatApp() {
 
   // வாட்ஸ்அப் போன்ற புஷ் நோட்டிஃபிகேஷன் அமைத்தல்
   useEffect(() => {
+    registerAndInitNotifications();
     if (!currentUser || !activeChat) return;
 
     const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
@@ -324,6 +330,7 @@ export default function LetsChatApp() {
   }, [currentUser, activeChat]);
 
   useEffect(() => {
+    registerAndInitNotifications();
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -694,6 +701,7 @@ export default function LetsChatApp() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       
       
         <div className="w-full max-w-sm bg-white/90 backdrop-blur-2xl border border-rose-200/60 p-6 rounded-3xl shadow-2xl space-y-5">
@@ -875,6 +883,7 @@ export default function LetsChatApp() {
 
   return (
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         
@@ -1060,6 +1069,7 @@ export default function LetsChatApp() {
                       
                       className={`flex flex-col group relative ${isMe ? "items-end" : "items-start"}`}
                     >
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       
                     {msg.type === "tod_card" ? (
                       <div className="max-w-[85%] bg-gradient-to-r from-rose-500 to-pink-500 text-white p-3.5 rounded-2xl shadow-md space-y-2">

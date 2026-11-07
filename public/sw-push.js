@@ -3,29 +3,37 @@
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Clear old caches if any
+    ])
+  );
 });
 
-// Listener when message arrives while tab is hidden/locked
+// Direct message listener from client tab
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SHOW_NOTIFICATION") {
-    const { title, body } = event.data;
-    const options = {
-      body: body || "You have a new message!",
-      icon: "/icon-192x192.png",
-      badge: "/icon-192x192.png",
-      vibrate: [300, 100, 300, 100, 300],
-      tag: "letschat-priority-msg",
-      renotify: true,
-      requireInteraction: true,
-      data: { url: "/" }
-    };
-    self.registration.showNotification(title || "LetsChat", options);
+    const title = event.data.title || "LetsChat";
+    const body = event.data.body || "You have a new message!";
+    
+    event.waitUntil(
+      self.registration.showNotification(title, {
+        body: body,
+        icon: "/icon-192x192.png",
+        badge: "/icon-192x192.png",
+        vibrate: [400, 200, 400],
+        tag: "letschat-new-msg",
+        renotify: true,
+        requireInteraction: true,
+        data: { url: "/" },
+      })
+    );
   }
 });
 
-// Native push listener
-self.addEventListener("push", function (event) {
+// Push notification listener
+self.addEventListener("push", (event) => {
   let title = "LetsChat";
   let body = "You have a new message!";
   if (event.data) {
@@ -38,24 +46,24 @@ self.addEventListener("push", function (event) {
     }
   }
 
-  const options = {
-    body: body,
-    icon: "/icon-192x192.png",
-    badge: "/icon-192x192.png",
-    vibrate: [300, 100, 300, 100, 300],
-    tag: "letschat-priority-msg",
-    renotify: true,
-    requireInteraction: true,
-    data: { url: "/" }
-  };
-
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: body,
+      icon: "/icon-192x192.png",
+      badge: "/icon-192x192.png",
+      vibrate: [400, 200, 400],
+      tag: "letschat-new-msg",
+      renotify: true,
+      requireInteraction: true,
+      data: { url: "/" },
+    })
+  );
 });
 
-self.addEventListener("notificationclick", function (event) {
+self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url && "focus" in client) {
           return client.focus();
