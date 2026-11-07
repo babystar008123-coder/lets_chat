@@ -1,6 +1,6 @@
 ﻿"use client";
 import React from "react";
-import { ref as dbRef, update } from "firebase/database";
+import { ref as dbRef, update, remove } from "firebase/database";
 import { db } from "@/lib/firebase";
 
 interface MessageActionModalProps {
@@ -34,33 +34,38 @@ export default function MessageActionModal({
         isDeleted: true,
         content: "🚫 This message was deleted",
         type: "text",
-        todType: null,
       });
       onDeleteForEveryoneSuccess(message.id);
       onClose();
     } catch (err: any) {
       console.error("Delete for everyone error:", err);
-      alert("Failed to delete message: " + (err?.message || err));
+      // Fallback: remove totally if update rule blocks
+      try {
+        const roomId = [currentUserId, activeChatId].sort().join("_");
+        await remove(dbRef(db, `chats/${roomId}/messages/${message.id}`));
+        onDeleteForEveryoneSuccess(message.id);
+        onClose();
+      } catch (e) {
+        alert("Delete failed: " + err.message);
+      }
     }
   };
 
   return (
     <div
-      className="fixed inset-0 z-[9999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
+      className="fixed inset-0 z-[99999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
       onClick={onClose}
     >
       <div
         className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-1" />
         <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">
           Message Options
         </p>
 
+        {/* Delete for you */}
         <button
           type="button"
           onClick={() => {
@@ -72,6 +77,7 @@ export default function MessageActionModal({
           Delete for you
         </button>
 
+        {/* Delete for everyone */}
         {isSender && !message.isDeleted && (
           <button
             type="button"
@@ -85,7 +91,7 @@ export default function MessageActionModal({
         <button
           type="button"
           onClick={onClose}
-          className="w-full py-2.5 text-gray-400 font-bold text-xs text-center mt-1 cursor-pointer hover:text-gray-600"
+          className="w-full py-2.5 text-gray-400 font-bold text-xs text-center mt-1 cursor-pointer"
         >
           Cancel
         </button>

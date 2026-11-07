@@ -1,10 +1,16 @@
 ﻿"use client";
 import SplashScreen from "@/components/SplashScreen";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import MessageActionModal from "@/components/MessageActionModal";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { registerAndInitNotifications, requestNotificationPermission, triggerLockscreenNotification } from "@/lib/notificationManager";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import SwipeableMessage from "@/components/SwipeableMessage";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import React, { useState, useRef, useEffect } from "react";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { initializeApp, getApps, getApp } from "firebase/app";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import {
   getDatabase,
   ref,
@@ -28,8 +34,11 @@ import {
   FiDownload
 } from "react-icons/fi";
 import { FiMoreVertical } from 'react-icons/fi';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { FiTrash2 } from 'react-icons/fi';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { FaDice } from "react-icons/fa";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCbUD9KOprj-tshPfD8Yz9jnhtvfFWwT-E",
@@ -123,6 +132,96 @@ const withTimeout = (promise: Promise<any>, ms: number = 15000) => {
 
 
 export default function LetsChatApp() {
+
+  // Strict 1 Phone Number = 1 Glass ID enforcement
+  const handleRegisterOrLogin = async (inputPhone: string, inputName: string) => {
+    const cleanPhone = (inputPhone || "").replace(/\s+/g, "").trim();
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      alert("Please enter a valid phone number (at least 10 digits).");
+      return;
+    }
+
+    try {
+      // Step A: Check if phone number already exists in phone_index
+      const phoneIndexRef = doc(db, "phone_index", cleanPhone);
+      const phoneSnap = await getDoc(phoneIndexRef);
+
+      if (phoneSnap.exists()) {
+        // Phone number is already registered; log in directly with existing ID
+        const existingRecord = phoneSnap.data();
+        const existingGlassId = existingRecord.glassId;
+        const existingUserId = existingRecord.userId || existingGlassId;
+
+        localStorage.setItem("myGlassId", existingGlassId);
+        localStorage.setItem("myUserId", existingUserId);
+        localStorage.setItem("myPhoneNumber", cleanPhone);
+
+        alert(`Welcome back! Logged in with your existing ID: ${existingGlassId}`);
+        window.location.reload();
+        return;
+      }
+
+      // Step B: New phone number -> Generate a unique 5-digit Glass ID
+      let generatedGlassId = "";
+      let isUnique = false;
+
+      while (!isUnique) {
+        generatedGlassId = Math.floor(10000 + Math.random() * 90000).toString();
+        const userCheckRef = doc(db, "users", generatedGlassId);
+        const userCheckSnap = await getDoc(userCheckRef);
+        if (!userCheckSnap.exists()) {
+          isUnique = true;
+        }
+      }
+
+      const newProfile = {
+        glassId: generatedGlassId,
+        phoneNumber: cleanPhone,
+        name: inputName || "User",
+        createdAt: Date.now()
+      };
+
+      // Save user record
+      await setDoc(doc(db, "users", generatedGlassId), newProfile);
+
+      // Lock phone number in phone_index permanently
+      await setDoc(phoneIndexRef, {
+        glassId: generatedGlassId,
+        userId: generatedGlassId,
+        phoneNumber: cleanPhone,
+        createdAt: Date.now()
+      });
+
+      localStorage.setItem("myGlassId", generatedGlassId);
+      localStorage.setItem("myUserId", generatedGlassId);
+      localStorage.setItem("myPhoneNumber", cleanPhone);
+
+      alert(`Account created successfully! Your permanent ID is: ${generatedGlassId}`);
+      window.location.reload();
+    } catch (err: any) {
+      console.error("Auth verification error:", err);
+      alert("Registration error: " + (err?.message || "Failed to verify phone number"));
+    }
+  };
+  const pressTimerRef = useRef<any>(null);
+
+  const handleMsgPressStart = (msg: any) => {
+    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = setTimeout(() => {
+      if (typeof window !== "undefined" && window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(50);
+      }
+      setSelectedMsgForDelete(msg);
+    }, 450);
+  };
+
+  const handleMsgPressEnd = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  };
   const [showSplash, setShowSplash] = useState(true);
   const [replyingTo, setReplyingTo] = useState<any>(null);
   const [selectedMsgForDelete, setSelectedMsgForDelete] = useState<any>(null);
@@ -1063,7 +1162,7 @@ export default function LetsChatApp() {
               {messages.map((msg) => {
                 const isMe = msg.senderId === currentUser.glassId;
                 return (
-                    <div
+                    <div onMouseDown={() => handleMsgPressStart(msg)} onMouseUp={handleMsgPressEnd} onMouseLeave={handleMsgPressEnd} onTouchStart={() => handleMsgPressStart(msg)} onTouchEnd={handleMsgPressEnd} onTouchMove={handleMsgPressEnd} onContextMenu={(e) => { e.preventDefault(); setSelectedMsgForDelete(msg); }} 
                       key={msg.id}
                       
                       className={`flex flex-col group relative ${isMe ? "items-end" : "items-start"}`}
@@ -1421,6 +1520,25 @@ export default function LetsChatApp() {
         )}
 
       </div>
+      <MessageActionModal
+        isOpen={Boolean(selectedMsgForDelete)}
+        onClose={() => setSelectedMsgForDelete(null)}
+        message={selectedMsgForDelete}
+        currentUserId={(typeof currentUserId !== "undefined" ? currentUserId : null) || (typeof myId !== "undefined" ? myId : null) || (typeof user !== "undefined" && user?.uid ? user.uid : "") || (typeof currentUser !== "undefined" && currentUser?.uid ? currentUser.uid : "")}
+        activeChatId={(typeof activeChat !== "undefined" && activeChat?.id ? activeChat.id : "") || (typeof activeChatId !== "undefined" ? activeChatId : "") || (typeof selectedChat !== "undefined" && selectedChat?.id ? selectedChat.id : "")}
+        onDeleteForMe={(msgId) => {
+          setMessages((prev: any[]) => prev.filter((m) => m.id !== msgId));
+        }}
+        onDeleteForEveryoneSuccess={(msgId) => {
+          setMessages((prev: any[]) =>
+            prev.map((m) =>
+              m.id === msgId
+                ? { ...m, isDeleted: true, content: "🚫 This message was deleted" }
+                : m
+            )
+          );
+        }}
+      />
     </div>
   );
 }
