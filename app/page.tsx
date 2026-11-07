@@ -1,7 +1,6 @@
-﻿import SplashScreen from '@/components/SplashScreen';
-import SwipeableMessage from '@/components/SwipeableMessage';
-"use client";
-
+﻿"use client";
+import SplashScreen from "@/components/SplashScreen";
+import SwipeableMessage from "@/components/SwipeableMessage";
 import React, { useState, useRef, useEffect } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
