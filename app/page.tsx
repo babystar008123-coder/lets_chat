@@ -796,13 +796,13 @@ export default function LetsChatApp() {
           onClick={() => setSelectedMsgForDelete(null)}
         >
           <div
-            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3"
+            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3 animate-in fade-in slide-in-from-bottom duration-200"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
             }}
           >
-            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-1"></div>
+            <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-1"></div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">
               Message Options
             </p>
@@ -854,13 +854,13 @@ export default function LetsChatApp() {
           onClick={() => setSelectedMsgForDelete(null)}
         >
           <div
-            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3"
+            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3 animate-in fade-in slide-in-from-bottom duration-200"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
             }}
           >
-            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-1"></div>
+            <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-1"></div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">
               Message Options
             </p>
