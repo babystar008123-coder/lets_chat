@@ -395,6 +395,22 @@ export default function LetsChatApp() {
     setSelectedMsgForDelete(null);
   };
 
+    // Long Press Timer State for Mobile
+  const longPressTimer = useRef<any>(null);
+
+  const handleTouchStartLongPress = (msg: ChatMessage) => {
+    longPressTimer.current = setTimeout(() => {
+      if (navigator.vibrate) navigator.vibrate(50);
+      setSelectedMsgForDelete(msg);
+    }, 500);
+  };
+
+  const handleTouchEndLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+    }
+  };
+
   const handleOpenChat = async (contact: ChatContact) => {
     setActiveChat(contact);
     if (currentUser && contact.unread) {
