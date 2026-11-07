@@ -1,4 +1,6 @@
-﻿"use client";
+﻿import SplashScreen from '@/components/SplashScreen';
+import SwipeableMessage from '@/components/SwipeableMessage';
+"use client";
 
 import React, { useState, useRef, useEffect } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
@@ -117,6 +119,21 @@ const withTimeout = (promise: Promise<any>, ms: number = 15000) => {
 };
 
 export default function LetsChatApp() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [replyingTo, setReplyingTo] = useState<any>(null);
+  const [selectedMsgForDelete, setSelectedMsgForDelete] = useState<any>(null);
+  const [contactToDelete, setContactToDelete] = useState<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw-push.js").catch(console.error);
+      }
+    }
+  }, []);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isRegister, setIsRegister] = useState(true);
   const [name, setName] = useState("");
@@ -569,6 +586,7 @@ export default function LetsChatApp() {
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
         <div className="w-full max-w-sm bg-white/90 backdrop-blur-2xl border border-rose-200/60 p-6 rounded-3xl shadow-2xl space-y-5">
           <div className="text-center space-y-1">
             <h1 className="text-3xl font-extrabold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
@@ -687,6 +705,7 @@ export default function LetsChatApp() {
 
   return (
     <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         
         {/* PWA INSTALL BANNER */}
@@ -855,6 +874,7 @@ export default function LetsChatApp() {
                 const isMe = msg.senderId === currentUser.glassId;
                 return (
                   <div key={msg.id} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
                     {msg.type === "tod_card" ? (
                       <div className="max-w-[85%] bg-gradient-to-r from-rose-500 to-pink-500 text-white p-3.5 rounded-2xl shadow-md space-y-2">
                         <div className="flex items-center gap-1.5 text-xs font-black tracking-wide uppercase bg-black/20 px-2 py-0.5 rounded-md w-fit">
@@ -1168,3 +1188,4 @@ export default function LetsChatApp() {
     </div>
   );
 }
+
