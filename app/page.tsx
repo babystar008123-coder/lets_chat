@@ -328,6 +328,7 @@ export default function LetsChatApp() {
     // Contact Delete Function
     // Contact Delete Function
     // Contact Delete Function
+    // Contact Delete Function
   const handleDeleteContact = async (contactGlassId: string) => {
     if (!currentUser) return;
     if (!window.confirm("Are you sure you want to delete this contact?")) return;
@@ -340,14 +341,46 @@ export default function LetsChatApp() {
       }
     } catch (err) {
       console.error("Delete contact error:", err);
-      alert("Failed to delete contact: " + err);
+      alert("Error deleting contact: " + err);
     }
   };
 
-  // Delete for Me (Removes locally and updates state)
+  // Delete for Me
   const handleDeleteMessageForMe = (msgId: string) => {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
     setSelectedMsgForDelete(null);
+  };
+
+  // Delete for Everyone
+  const handleDeleteMessageForEveryone = async (msgId: string) => {
+    if (!currentUser || !activeChat) return;
+    const targetMsgId = msgId;
+    const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
+    
+    try {
+      const { ref: dbRef, update } = await import("firebase/database");
+      const messageRef = dbRef(db, `chats/${roomId}/messages/${targetMsgId}`);
+      
+      await update(messageRef, {
+        isDeleted: true,
+        content: "🚫 This message was deleted",
+        type: "text",
+        todType: null
+      });
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === targetMsgId
+            ? { ...m, isDeleted: true, content: "🚫 This message was deleted", type: "text", todType: undefined }
+            : m
+        )
+      );
+      setSelectedMsgForDelete(null);
+    } catch (err: any) {
+      console.error("Delete for everyone error:", err);
+      alert("Delete failed: " + (err?.message || err));
+      setSelectedMsgForDelete(null);
+    }
   };
 
   // Delete for Everyone (Direct Firebase Realtime Database update)
