@@ -976,11 +976,28 @@ export default function LetsChatApp() {
               {messages.map((msg) => {
                 const isMe = msg.senderId === currentUser.glassId;
                 return (
-                  <div key={msg.id} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                    <div
+                      key={msg.id}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setSelectedMsgForDelete(msg);
+                      }}
+                      className={`flex flex-col group relative ${isMe ? "items-end" : "items-start"}`}
+                    >
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       
                     {msg.type === "tod_card" ? (
                       <div className="max-w-[85%] bg-gradient-to-r from-rose-500 to-pink-500 text-white p-3.5 rounded-2xl shadow-md space-y-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMsgForDelete(msg);
+                          }}
+                          className="absolute -top-2 right-0 bg-white text-rose-600 rounded-full p-1 shadow-md opacity-80 hover:opacity-100 transition-opacity"
+                          title="Delete message"
+                        >
+                          <FiTrash2 size={12} />
+                        </button>
                         <div className="flex items-center gap-1.5 text-xs font-black tracking-wide uppercase bg-black/20 px-2 py-0.5 rounded-md w-fit">
                           🎲 {msg.todType} Challenge
                         </div>
@@ -1319,6 +1336,7 @@ export default function LetsChatApp() {
     </div>
   );
 }
+
 
 
 
