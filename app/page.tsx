@@ -383,33 +383,6 @@ export default function LetsChatApp() {
     }
   };
 
-  // Delete for Everyone (Direct Firebase Realtime Database update)
-  const handleDeleteMessageForEveryone = async (msgId: string) => {
-    if (!currentUser || !activeChat) return;
-    try {
-      const { ref: dbRef, update } = await import("firebase/database");
-      const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
-      
-      await update(dbRef(db, `chats/${roomId}/messages/${msgId}`), {
-        isDeleted: true,
-        content: "🚫 This message was deleted",
-        type: "text",
-        todType: null
-      });
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? { ...m, isDeleted: true, content: "🚫 This message was deleted", type: "text", todType: undefined }
-            : m
-        )
-      );
-      setSelectedMsgForDelete(null);
-    } catch (err: any) {
-      console.error("Delete for everyone error:", err);
-      alert("Failed to delete message: " + (err?.message || err));
-    }
-  };
 
 
   // Delete for Everyone (Firebase Database Update)
