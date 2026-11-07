@@ -25,6 +25,7 @@ import {
   FiX,
   FiDownload
 } from "react-icons/fi";
+import { FiTrash2 } from 'react-icons/fi';
 import { FaDice } from "react-icons/fa";
 
 const firebaseConfig = {
@@ -277,6 +278,22 @@ export default function LetsChatApp() {
           ...data[k]
         }));
         setMessages(parsed);
+        // Trigger system notification if screen locked or document hidden
+        if (data) {
+          const allMsgs = Object.values(data) as any[];
+          const lastMsg = allMsgs[allMsgs.length - 1];
+          if (lastMsg && lastMsg.senderId !== currentUser.glassId && document.hidden) {
+            if ("Notification" in window && Notification.permission === "granted") {
+              navigator.serviceWorker?.ready.then((reg) => {
+                reg.showNotification(`New message from ${lastMsg.senderName || lastMsg.senderId}`, {
+                  body: lastMsg.content,
+                  icon: "/icon-192x192.png",
+                  vibrate: [200, 100, 200],
+                });
+              });
+            }
+          }
+        }
 
         const lastMsg = parsed[parsed.length - 1];
         if (
@@ -305,6 +322,42 @@ export default function LetsChatApp() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  
+  const handleDeleteContact = async (contactGlassId: string) => {
+    if (!currentUser) return;
+    if (confirm("Are you sure you want to delete this contact and conversation?")) {
+      try {
+        const { remove, ref: dbRef } = await import("firebase/database");
+        await remove(dbRef(db, `contacts/${currentUser.glassId}/${contactGlassId}`));
+        if (activeChat?.glassId === contactGlassId) {
+          setActiveChat(null);
+        }
+      } catch (err) {
+        console.error("Delete contact error:", err);
+      }
+    }
+  };
+
+  const handleDeleteMessageForMe = (msgId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setSelectedMsgForDelete(null);
+  };
+
+  const handleDeleteMessageForEveryone = async (msgId: string) => {
+    if (!currentUser || !activeChat) return;
+    try {
+      const { update, ref: dbRef } = await import("firebase/database");
+      const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
+      await update(dbRef(db, `chats/${roomId}/messages/${msgId}`), {
+        isDeleted: true,
+        content: "🚫 This message was deleted",
+      });
+    } catch (err) {
+      console.error("Delete for everyone error:", err);
+    }
+    setSelectedMsgForDelete(null);
+  };
 
   const handleOpenChat = async (contact: ChatContact) => {
     setActiveChat(contact);
@@ -586,6 +639,7 @@ export default function LetsChatApp() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
         <div className="w-full max-w-sm bg-white/90 backdrop-blur-2xl border border-rose-200/60 p-6 rounded-3xl shadow-2xl space-y-5">
           <div className="text-center space-y-1">
             <h1 className="text-3xl font-extrabold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
@@ -698,7 +752,43 @@ export default function LetsChatApp() {
             </button>
           </form>
         </div>
-      </main>
+            {/* Delete Message Confirmation Modal */}
+      {selectedMsgForDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-xs p-4"
+          onClick={() => setSelectedMsgForDelete(null)}
+        >
+          <div
+            className="bg-white rounded-3xl p-4 w-full max-w-sm shadow-2xl flex flex-col gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center py-1">
+              Message Options
+            </p>
+            <button
+              onClick={() => handleDeleteMessageForMe(selectedMsgForDelete.id)}
+              className="w-full py-3 rounded-2xl bg-gray-50 text-gray-700 font-semibold text-xs text-center hover:bg-gray-100 transition-all"
+            >
+              Delete for Me
+            </button>
+            {selectedMsgForDelete.senderId === currentUser?.glassId && (
+              <button
+                onClick={() => handleDeleteMessageForEveryone(selectedMsgForDelete.id)}
+                className="w-full py-3 rounded-2xl bg-rose-50 text-rose-600 font-bold text-xs text-center hover:bg-rose-100 transition-all"
+              >
+                Delete for Everyone
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedMsgForDelete(null)}
+              className="w-full py-2 text-gray-400 font-semibold text-xs text-center mt-1"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </main>
     );
   }
 
@@ -943,6 +1033,20 @@ export default function LetsChatApp() {
               </div>
             )}
 
+                        {replyingTo && (
+              <div className="mx-4 mb-2 p-2 px-3 rounded-2xl bg-white border-l-4 border-rose-500 shadow-sm flex items-center justify-between">
+                <div className="flex flex-col text-xs">
+                  <span className="font-bold text-rose-500">Replying to {replyingTo.senderName || replyingTo.senderId}</span>
+                  <span className="text-gray-500 line-clamp-1">{replyingTo.content}</span>
+                </div>
+                <button
+                  onClick={() => setReplyingTo(null)}
+                  className="p-1 rounded-full text-gray-400 hover:text-gray-700 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             <form
               onSubmit={handleSendText}
               className="p-3 border-t border-rose-100 bg-white/70 backdrop-blur-md flex items-center gap-2"
@@ -1187,4 +1291,5 @@ export default function LetsChatApp() {
     </div>
   );
 }
+
 
