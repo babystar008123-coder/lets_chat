@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -19,10 +19,14 @@ import {
   Image as ImageIcon,
   Copy,
   Check,
+  Trash2,
+  X,
 } from "lucide-react";
 import MemePanel from "@/components/MemePanel";
 import CallModal from "@/components/CallModal";
 import HeartShower from "@/components/HeartShower";
+import SplashScreen from "@/components/SplashScreen";
+import SwipeableMessage from "@/components/SwipeableMessage";
 import { db, storage } from "@/lib/firebase";
 import {
   collection,
@@ -33,6 +37,8 @@ import {
   serverTimestamp,
   doc,
   setDoc,
+  updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAgora } from "@/hooks/useAgora";
@@ -44,9 +50,12 @@ interface Message {
   type: "text" | "meme" | "image" | "video" | "audio";
   memeMeta?: { punch: string; actor: string };
   createdAt?: any;
+  isDeleted?: boolean;
+  replyTo?: { id: string; text: string; sender: string };
 }
 
 export default function ChatPage() {
+  const [showSplash, setShowSplash] = useState(true);
   const [message, setMessage] = useState("");
   const [showMemes, setShowMemes] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -65,6 +74,11 @@ export default function ChatPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordSec, setRecordSec] = useState(0);
   const [copied, setCopied] = useState(false);
+
+  // Reply & Delete states
+  const [replyingTo, setReplyingTo] = useState<{ id: string; text: string; sender: string } | null>(null);
+  const [selectedMsgForDelete, setSelectedMsgForDelete] = useState<Message | null>(null);
+  const [contactToDelete, setContactToDelete] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +163,36 @@ export default function ChatPage() {
     }
   };
 
+  const confirmDeleteContact = (id: string) => {
+    const updated = recentChats.filter((chatId) => chatId !== id);
+    setRecentChats(updated);
+    localStorage.setItem("lovechat_recents", JSON.stringify(updated));
+    if (activeChat.name === id) {
+      setActiveChat({ id: "global", name: "Global Love Room", isGlobal: true });
+    }
+    setContactToDelete(null);
+  };
+
+  const handleDeleteForMe = (msgId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setSelectedMsgForDelete(null);
+  };
+
+  const handleDeleteForEveryone = async (msgId: string) => {
+    try {
+      const docRef = activeChat.isGlobal
+        ? doc(db, "global_messages", msgId)
+        : doc(db, "private_chats", activeChat.id, "messages", msgId);
+      await updateDoc(docRef, {
+        isDeleted: true,
+        text: "🚫 This message was deleted",
+      });
+    } catch (e) {
+      console.error("Delete for everyone error:", e);
+    }
+    setSelectedMsgForDelete(null);
+  };
+
   const sendMessage = async (
     text: string,
     type: "text" | "meme" | "image" | "video" | "audio" = "text",
@@ -167,8 +211,10 @@ export default function ChatPage() {
         createdAt: serverTimestamp(),
         type,
         ...(memeMeta ? { memeMeta } : {}),
+        ...(replyingTo ? { replyTo: replyingTo } : {}),
       });
       setMessage("");
+      setReplyingTo(null);
       setShowMemes(false);
     } catch (e) {
       console.error("Message send failure:", e);
@@ -210,7 +256,7 @@ export default function ChatPage() {
 
   const triggerLoveBurst = () => {
     setHeartTrigger((prev) => prev + 1);
-    sendMessage("❤️❤️❤️ LOVE SHOWER ❤️❤️❤️", "text");
+    sendMessage("❤️ LOVE SHOWER ❤️", "text");
   };
 
   const initiateCall = async (video: boolean) => {
@@ -226,6 +272,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden font-sans select-none relative">
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <HeartShower trigger={heartTrigger} />
 
       {/* Decorative ambient gradient backdrop */}
@@ -344,7 +391,7 @@ export default function ChatPage() {
                 <div
                   key={id}
                   onClick={() => selectPrivateChat(id)}
-                  className={`p-3 rounded-2xl cursor-pointer transition-all flex items-center justify-between mb-1.5 border ${
+                  className={`p-3 rounded-2xl cursor-pointer transition-all flex items-center justify-between mb-1.5 border group ${
                     activeChat.name === id
                       ? "bg-rose-500/10 dark:bg-rose-500/20 border-rose-400 text-rose-600 font-bold shadow-sm"
                       : "bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border-rose-100 dark:border-slate-800 text-gray-700 dark:text-gray-300"
@@ -359,7 +406,19 @@ export default function ChatPage() {
                       <p className="text-[9px] text-gray-400">1-on-1 Private Love Chat</p>
                     </div>
                   </div>
-                  <UserCheck size={14} className="text-rose-500" />
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setContactToDelete(id);
+                      }}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-slate-700 transition-all opacity-80 group-hover:opacity-100"
+                      title="Delete Contact"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <UserCheck size={14} className="text-rose-500" />
+                  </div>
                 </div>
               ))
             )}
@@ -436,77 +495,111 @@ export default function ChatPage() {
 
               return (
                 <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    className={`p-4 rounded-3xl shadow-sm max-w-[85%] md:max-w-[65%] ${
-                      isMe
-                        ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-tr-none shadow-rose-500/20"
-                        : "bg-white dark:bg-slate-800 text-gray-800 dark:text-white rounded-tl-none border border-rose-100/70 dark:border-slate-700/60 shadow-sm"
-                    }`}
+                  <SwipeableMessage
+                    onReply={() =>
+                      setReplyingTo({
+                        id: msg.id,
+                        text: msg.type === "text" ? msg.text : `[${msg.type}]`,
+                        sender: msg.senderId,
+                      })
+                    }
+                    onLongPress={() => setSelectedMsgForDelete(msg)}
                   >
-                    <p
-                      className={`text-[10px] font-extrabold mb-1.5 opacity-80 ${
-                        isMe ? "text-rose-100" : "text-rose-500"
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      className={`p-4 rounded-3xl shadow-sm max-w-[85%] md:max-w-[65%] ${
+                        isMe
+                          ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-tr-none shadow-rose-500/20 ml-auto"
+                          : "bg-white dark:bg-slate-800 text-gray-800 dark:text-white rounded-tl-none border border-rose-100/70 dark:border-slate-700/60 shadow-sm mr-auto"
                       }`}
                     >
-                      {msg.senderId}
-                    </p>
-
-                    {/* Tamil Actor Meme Card */}
-                    {msg.type === "meme" && (
-                      <div className="rounded-2xl overflow-hidden bg-black/10 dark:bg-black/30 p-2 space-y-2 border border-white/20">
-                        <img
-                          src={msg.text}
-                          alt="Tamil Meme"
-                          className="w-56 h-56 rounded-xl object-cover bg-white/10 mx-auto"
-                        />
-                        {msg.memeMeta && (
-                          <div className="text-center p-1.5 bg-black/20 rounded-xl">
-                            <p className="text-xs font-black italic">"{msg.memeMeta.punch}"</p>
-                            <p className="text-[10px] opacity-80 mt-0.5">- {msg.memeMeta.actor}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Image Attachment */}
-                    {msg.type === "image" && (
-                      <img
-                        src={msg.text}
-                        alt="Shared media"
-                        className="w-64 max-h-80 object-cover rounded-2xl shadow-sm"
-                      />
-                    )}
-
-                    {/* Video Attachment */}
-                    {msg.type === "video" && (
-                      <video src={msg.text} controls className="w-64 rounded-2xl shadow-sm" />
-                    )}
-
-                    {/* Audio / Voice Note */}
-                    {msg.type === "audio" && (
-                      <div className="flex items-center gap-3 w-64 py-1">
-                        <div className="p-2 rounded-full bg-rose-500/20 text-rose-500">
-                          <Mic size={18} />
+                      {/* Quoted Reply Preview */}
+                      {msg.replyTo && (
+                        <div
+                          className={`mb-2 p-2 rounded-xl border-l-4 text-xs ${
+                            isMe
+                              ? "bg-black/20 border-white text-white/90"
+                              : "bg-rose-50 dark:bg-slate-700/60 border-rose-500 text-gray-700 dark:text-gray-200"
+                          }`}
+                        >
+                          <p className="font-extrabold text-[10px] uppercase tracking-wider opacity-80">
+                            Replying to {msg.replyTo.sender}
+                          </p>
+                          <p className="line-clamp-1 italic">{msg.replyTo.text}</p>
                         </div>
-                        <audio src={msg.text} controls className="w-full h-8" />
-                      </div>
-                    )}
+                      )}
 
-                    {/* Standard Text */}
-                    {msg.type === "text" && (
-                      <p className="text-sm font-medium leading-relaxed break-words">{msg.text}</p>
-                    )}
+                      <p
+                        className={`text-[10px] font-extrabold mb-1.5 opacity-80 ${
+                          isMe ? "text-rose-100" : "text-rose-500"
+                        }`}
+                      >
+                        {msg.senderId}
+                      </p>
 
-                    <p
-                      className={`text-[9px] text-right mt-1.5 font-semibold opacity-70 ${
-                        isMe ? "text-rose-100" : "text-gray-400"
-                      }`}
-                    >
-                      {timeFormatted}
-                    </p>
-                  </motion.div>
+                      {/* Deleted Message Notification */}
+                      {msg.isDeleted ? (
+                        <p className="text-xs italic opacity-70">🚫 This message was deleted</p>
+                      ) : (
+                        <>
+                          {/* Tamil Actor Meme Card */}
+                          {msg.type === "meme" && (
+                            <div className="rounded-2xl overflow-hidden bg-black/10 dark:bg-black/30 p-2 space-y-2 border border-white/20">
+                              <img
+                                src={msg.text}
+                                alt="Tamil Meme"
+                                className="w-56 h-56 rounded-xl object-cover bg-white/10 mx-auto"
+                              />
+                              {msg.memeMeta && (
+                                <div className="text-center p-1.5 bg-black/20 rounded-xl">
+                                  <p className="text-xs font-black italic">"{msg.memeMeta.punch}"</p>
+                                  <p className="text-[10px] opacity-80 mt-0.5">- {msg.memeMeta.actor}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Image Attachment */}
+                          {msg.type === "image" && (
+                            <img
+                              src={msg.text}
+                              alt="Shared media"
+                              className="w-64 max-h-80 object-cover rounded-2xl shadow-sm"
+                            />
+                          )}
+
+                          {/* Video Attachment */}
+                          {msg.type === "video" && (
+                            <video src={msg.text} controls className="w-64 rounded-2xl shadow-sm" />
+                          )}
+
+                          {/* Audio / Voice Note */}
+                          {msg.type === "audio" && (
+                            <div className="flex items-center gap-3 w-64 py-1">
+                              <div className="p-2 rounded-full bg-rose-500/20 text-rose-500">
+                                <Mic size={18} />
+                              </div>
+                              <audio src={msg.text} controls className="w-full h-8" />
+                            </div>
+                          )}
+
+                          {/* Standard Text */}
+                          {msg.type === "text" && (
+                            <p className="text-sm font-medium leading-relaxed break-words">{msg.text}</p>
+                          )}
+                        </>
+                      )}
+
+                      <p
+                        className={`text-[9px] text-right mt-1.5 font-semibold opacity-70 ${
+                          isMe ? "text-rose-100" : "text-gray-400"
+                        }`}
+                      >
+                        {timeFormatted}
+                      </p>
+                    </motion.div>
+                  </SwipeableMessage>
                 </div>
               );
             })
@@ -519,6 +612,22 @@ export default function ChatPage() {
           {isUploading && (
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-sm text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-xl animate-bounce">
               Uploading media to love chat... 🚀
+            </div>
+          )}
+
+          {/* Replying Preview Container */}
+          {replyingTo && (
+            <div className="max-w-4xl mx-auto mb-2 p-2.5 px-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-rose-500 shadow-md flex items-center justify-between">
+              <div className="flex flex-col text-xs">
+                <span className="font-bold text-rose-500">Replying to {replyingTo.sender}</span>
+                <span className="text-gray-500 dark:text-gray-400 line-clamp-1">{replyingTo.text}</span>
+              </div>
+              <button
+                onClick={() => setReplyingTo(null)}
+                className="p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X size={16} />
+              </button>
             </div>
           )}
 
@@ -629,6 +738,72 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Contact Modal */}
+      {contactToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center border border-rose-100 dark:border-slate-700">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 mx-auto flex items-center justify-center mb-3">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-base font-bold text-gray-800 dark:text-white">Delete Contact?</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Remove <span className="font-bold text-rose-500">{contactToDelete}</span> from your private chat list?
+            </p>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setContactToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-300 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDeleteContact(contactToDelete)}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 transition-all"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Message Action Sheet */}
+      {selectedMsgForDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-xs p-4"
+          onClick={() => setSelectedMsgForDelete(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-3xl p-4 w-full max-w-sm shadow-2xl flex flex-col gap-2 border border-rose-100 dark:border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center py-1">
+              Message Options
+            </p>
+            <button
+              onClick={() => handleDeleteForMe(selectedMsgForDelete.id)}
+              className="w-full py-3 rounded-2xl bg-gray-50 dark:bg-slate-700 text-gray-700 dark:text-gray-200 font-semibold text-xs text-center hover:bg-gray-100 dark:hover:bg-slate-600 transition-all"
+            >
+              Delete for Me
+            </button>
+            {selectedMsgForDelete.senderId === myFancyNumber && (
+              <button
+                onClick={() => handleDeleteForEveryone(selectedMsgForDelete.id)}
+                className="w-full py-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold text-xs text-center hover:bg-rose-100 transition-all"
+              >
+                Delete for Everyone
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedMsgForDelete(null)}
+              className="w-full py-2 text-gray-400 font-semibold text-xs text-center mt-1"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Agora Video / Voice Call Screen Overlay */}
       {callActive && (
