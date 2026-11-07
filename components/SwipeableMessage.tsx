@@ -17,7 +17,7 @@ export default function SwipeableMessage({ children, onReply, onLongPress }: Swi
     longPressTimer.current = setTimeout(() => {
       if (navigator.vibrate) navigator.vibrate(50);
       onLongPress();
-    }, 550);
+    }, 500);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -45,7 +45,7 @@ export default function SwipeableMessage({ children, onReply, onLongPress }: Swi
   return (
     <div className="relative flex items-center w-full select-none">
       <div
-        className="absolute left-1 flex items-center justify-center w-8 h-8 rounded-full bg-[#F02D65] text-white shadow-md transition-opacity duration-150"
+        className="absolute left-1 flex items-center justify-center w-8 h-8 rounded-full bg-[#F02D65] text-white shadow-md transition-opacity duration-150 pointer-events-none"
         style={{
           opacity: offsetX > 20 ? offsetX / 60 : 0,
           transform: `scale(${Math.min(offsetX / 45, 1)})`,

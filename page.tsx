@@ -21,6 +21,7 @@ import {
   Check,
   Trash2,
   X,
+  Bell
 } from "lucide-react";
 import MemePanel from "@/components/MemePanel";
 import CallModal from "@/components/CallModal";
@@ -38,7 +39,6 @@ import {
   doc,
   setDoc,
   updateDoc,
-  deleteDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAgora } from "@/hooks/useAgora";
@@ -95,6 +95,18 @@ export default function ChatPage() {
     toggleVideo,
   } = useAgora();
 
+  // Notification Permission Request
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw-push.js").catch(console.error);
+      }
+    }
+  }, []);
+
   // Initialize Fancy ID
   useEffect(() => {
     const savedId =
@@ -105,11 +117,10 @@ export default function ChatPage() {
     const recents = JSON.parse(localStorage.getItem("lovechat_recents") || "[]");
     setRecentChats(recents);
 
-    // Announce online presence in Firestore
     setDoc(doc(db, "users", savedId), { lastSeen: serverTimestamp(), online: true }, { merge: true });
   }, []);
 
-  // Listen for real-time messages in active room
+  // Listen for real-time messages
   useEffect(() => {
     const messagesRef = activeChat.isGlobal
       ? collection(db, "global_messages")
@@ -119,23 +130,39 @@ export default function ChatPage() {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        setMessages(
-          snapshot.docs.map((docSnap) => ({
-            id: docSnap.id,
-            ...(docSnap.data() as Omit<Message, "id">),
-          }))
-        );
+        const msgs = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<Message, "id">),
+        }));
+        
+        // லாக் ஸ்கிரீனில் புதிய மெசேஜ் நோட்டிபிகேஷன் அனுப்புதல்
+        if (msgs.length > messages.length && messages.length > 0) {
+          const lastMsg = msgs[msgs.length - 1];
+          if (lastMsg.senderId !== myFancyNumber && typeof window !== "undefined" && "Notification" in window) {
+            if (Notification.permission === "granted") {
+              navigator.serviceWorker?.ready.then((reg) => {
+                reg.showNotification(`New message from ${lastMsg.senderId}`, {
+                  body: lastMsg.text,
+                  icon: "/icon-192x192.png",
+                  vibrate: [200, 100, 200],
+                });
+              });
+            }
+          }
+        }
+
+        setMessages(msgs);
         setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
       },
       (error) => {
-        console.warn("Firestore snapshot listener:", error);
+        console.warn("Firestore listener:", error);
       }
     );
 
     return () => unsubscribe();
-  }, [activeChat]);
+  }, [activeChat, messages.length, myFancyNumber]);
 
-  // Voice note recording timer
+  // Voice note timer
   useEffect(() => {
     if (isRecording) {
       setRecordSec(0);
@@ -275,13 +302,12 @@ export default function ChatPage() {
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <HeartShower trigger={heartTrigger} />
 
-      {/* Decorative ambient gradient backdrop */}
+      {/* Decorative ambient gradient */}
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-rose-500/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Left Sidebar / Room Directory */}
+      {/* Left Sidebar */}
       <div className="w-full md:w-88 flex flex-col bg-white/95 dark:bg-slate-900/90 backdrop-blur-2xl border-r border-rose-100 dark:border-rose-950/40 z-20 shadow-2xl">
-        {/* Brand & ID Badge */}
         <div className="p-5 border-b border-rose-100/60 dark:border-rose-950/40 bg-gradient-to-br from-rose-50/70 via-white to-indigo-50/30 dark:from-slate-900 dark:to-slate-800">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -297,16 +323,28 @@ export default function ChatPage() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={triggerLoveBurst}
-              className="p-2 rounded-2xl bg-rose-100/70 hover:bg-rose-200 text-rose-600 transition-all hover:scale-105 active:scale-95"
-              title="Send Love Shower"
-            >
-              <Sparkles size={16} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  if (typeof window !== "undefined" && "Notification" in window) {
+                    Notification.requestPermission().then((perm) => alert("Notification status: " + perm));
+                  }
+                }}
+                className="p-2 rounded-2xl bg-rose-100/70 hover:bg-rose-200 text-rose-600 transition-all"
+                title="Enable Lockscreen Notifications"
+              >
+                <Bell size={16} />
+              </button>
+              <button
+                onClick={triggerLoveBurst}
+                className="p-2 rounded-2xl bg-rose-100/70 hover:bg-rose-200 text-rose-600 transition-all hover:scale-105 active:scale-95"
+                title="Send Love Shower"
+              >
+                <Sparkles size={16} />
+              </button>
+            </div>
           </div>
 
-          {/* User's Fancy ID Card with Copy Button */}
           <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white dark:bg-slate-800 border border-rose-200/60 dark:border-rose-900/40 shadow-sm">
             <div>
               <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Your Fancy ID</p>
@@ -323,14 +361,13 @@ export default function ChatPage() {
             </button>
           </div>
 
-          {/* Fancy ID Search */}
           <div className="mt-3 relative">
             <input
               type="text"
               value={targetId}
               onChange={(e) => setTargetId(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && selectPrivateChat(targetId.trim())}
-              placeholder="Search lover's ID (e.g. LC-777-1234)..."
+              placeholder="Search lover's ID..."
               className="w-full pl-9 pr-8 py-2.5 text-xs rounded-2xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-slate-800/60 text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:ring-2 focus:ring-rose-400 transition-all"
             />
             <Search className="absolute left-3 top-3 text-gray-400" size={14} />
@@ -345,9 +382,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Channels & Private Connections */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {/* Global Love Room Channel */}
           <div
             onClick={() => setActiveChat({ id: "global", name: "Global Love Room", isGlobal: true })}
             className={`p-3.5 rounded-2xl cursor-pointer transition-all flex items-center justify-between border ${
@@ -376,7 +411,6 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Private Chat List */}
           <div className="pt-3">
             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2 mb-2">
               Private Connections
@@ -384,7 +418,7 @@ export default function ChatPage() {
             {recentChats.length === 0 ? (
               <div className="p-4 rounded-2xl border border-dashed border-rose-200/60 dark:border-slate-800 text-center">
                 <p className="text-xs text-gray-400">No private chats yet.</p>
-                <p className="text-[10px] text-rose-500 mt-1">Search a Fancy ID above to start 1-on-1!</p>
+                <p className="text-[10px] text-rose-500 mt-1">Search ID above to start 1-on-1!</p>
               </div>
             ) : (
               recentChats.map((id) => (
@@ -403,19 +437,20 @@ export default function ChatPage() {
                     </div>
                     <div>
                       <p className="text-xs font-bold">{id}</p>
-                      <p className="text-[9px] text-gray-400">1-on-1 Private Love Chat</p>
+                      <p className="text-[9px] text-gray-400">1-on-1 Private Chat</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    {/* Delete User/Contact Button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setContactToDelete(id);
                       }}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-slate-700 transition-all opacity-80 group-hover:opacity-100"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-slate-700 transition-all"
                       title="Delete Contact"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={15} />
                     </button>
                     <UserCheck size={14} className="text-rose-500" />
                   </div>
@@ -426,9 +461,8 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Main Chat Canvas */}
+      {/* Main Canvas */}
       <div className="flex-1 flex flex-col relative bg-slate-50 dark:bg-slate-950">
-        {/* Chat Room Header */}
         <div className="h-18 flex items-center justify-between px-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-rose-100/60 dark:border-rose-950/40 shadow-sm z-10">
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -455,7 +489,6 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Agora Audio & Video Calling Triggers */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => initiateCall(false)}
@@ -476,7 +509,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Messages Stream */}
+        {/* Message Stream */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400">
@@ -484,7 +517,6 @@ export default function ChatPage() {
                 💌
               </div>
               <p className="text-sm font-bold text-gray-700 dark:text-gray-300">No messages in this room yet.</p>
-              <p className="text-xs text-gray-400 mt-1">Send a Tamil actor meme or a love message to connect!</p>
             </div>
           ) : (
             messages.map((msg) => {
@@ -508,13 +540,12 @@ export default function ChatPage() {
                     <motion.div
                       initial={{ opacity: 0, y: 10, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      className={`p-4 rounded-3xl shadow-sm max-w-[85%] md:max-w-[65%] ${
+                      className={`p-4 rounded-3xl shadow-sm max-w-[85%] md:max-w-[65%] cursor-pointer ${
                         isMe
                           ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-tr-none shadow-rose-500/20 ml-auto"
                           : "bg-white dark:bg-slate-800 text-gray-800 dark:text-white rounded-tl-none border border-rose-100/70 dark:border-slate-700/60 shadow-sm mr-auto"
                       }`}
                     >
-                      {/* Quoted Reply Preview */}
                       {msg.replyTo && (
                         <div
                           className={`mb-2 p-2 rounded-xl border-l-4 text-xs ${
@@ -538,12 +569,10 @@ export default function ChatPage() {
                         {msg.senderId}
                       </p>
 
-                      {/* Deleted Message Notification */}
                       {msg.isDeleted ? (
                         <p className="text-xs italic opacity-70">🚫 This message was deleted</p>
                       ) : (
                         <>
-                          {/* Tamil Actor Meme Card */}
                           {msg.type === "meme" && (
                             <div className="rounded-2xl overflow-hidden bg-black/10 dark:bg-black/30 p-2 space-y-2 border border-white/20">
                               <img
@@ -560,7 +589,6 @@ export default function ChatPage() {
                             </div>
                           )}
 
-                          {/* Image Attachment */}
                           {msg.type === "image" && (
                             <img
                               src={msg.text}
@@ -569,12 +597,10 @@ export default function ChatPage() {
                             />
                           )}
 
-                          {/* Video Attachment */}
                           {msg.type === "video" && (
                             <video src={msg.text} controls className="w-64 rounded-2xl shadow-sm" />
                           )}
 
-                          {/* Audio / Voice Note */}
                           {msg.type === "audio" && (
                             <div className="flex items-center gap-3 w-64 py-1">
                               <div className="p-2 rounded-full bg-rose-500/20 text-rose-500">
@@ -584,20 +610,31 @@ export default function ChatPage() {
                             </div>
                           )}
 
-                          {/* Standard Text */}
                           {msg.type === "text" && (
                             <p className="text-sm font-medium leading-relaxed break-words">{msg.text}</p>
                           )}
                         </>
                       )}
 
-                      <p
-                        className={`text-[9px] text-right mt-1.5 font-semibold opacity-70 ${
-                          isMe ? "text-rose-100" : "text-gray-400"
-                        }`}
-                      >
-                        {timeFormatted}
-                      </p>
+                      <div className="flex items-center justify-between mt-1.5 pt-1 border-t border-white/10">
+                        {/* Delete trigger icon on bubble */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMsgForDelete(msg);
+                          }}
+                          className="opacity-60 hover:opacity-100 text-[10px] flex items-center gap-1"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                        <p
+                          className={`text-[9px] font-semibold opacity-70 ${
+                            isMe ? "text-rose-100" : "text-gray-400"
+                          }`}
+                        >
+                          {timeFormatted}
+                        </p>
+                      </div>
                     </motion.div>
                   </SwipeableMessage>
                 </div>
@@ -607,7 +644,7 @@ export default function ChatPage() {
           <div ref={scrollRef} />
         </div>
 
-        {/* Input Dock & Connectors */}
+        {/* Input Bar */}
         <div className="p-4 relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-t border-rose-100/60 dark:border-rose-950/40">
           {isUploading && (
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-sm text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-xl animate-bounce">
@@ -615,7 +652,6 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Replying Preview Container */}
           {replyingTo && (
             <div className="max-w-4xl mx-auto mb-2 p-2.5 px-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-rose-500 shadow-md flex items-center justify-between">
               <div className="flex flex-col text-xs">
@@ -631,7 +667,6 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Voice recording floating indicator */}
           {isRecording && (
             <div className="max-w-4xl mx-auto mb-2 flex items-center justify-between p-3 rounded-2xl bg-rose-600 text-white shadow-xl animate-pulse">
               <div className="flex items-center gap-2">
@@ -656,7 +691,6 @@ export default function ChatPage() {
           )}
 
           <div className="max-w-4xl mx-auto flex items-end gap-2 bg-slate-100/80 dark:bg-slate-800/80 p-2.5 rounded-3xl border border-rose-200/60 dark:border-rose-900/40 focus-within:ring-2 focus-within:ring-rose-500/40 transition-all shadow-inner">
-            {/* Meme Vault Popover Trigger */}
             <div className="relative">
               <button
                 onClick={() => setShowMemes(!showMemes)}
@@ -683,7 +717,6 @@ export default function ChatPage() {
               </AnimatePresence>
             </div>
 
-            {/* Input Text Box */}
             <textarea
               rows={1}
               value={message}
@@ -694,11 +727,10 @@ export default function ChatPage() {
                   sendMessage(message);
                 }
               }}
-              placeholder={`Send love to ${activeChat.name}...`}
+              placeholder={`Send message to ${activeChat.name}...`}
               className="flex-1 py-2 px-3 outline-none text-sm bg-transparent resize-none max-h-32 text-gray-800 dark:text-white placeholder-gray-400 font-medium"
             />
 
-            {/* File & Voice Controls */}
             <div className="flex items-center gap-1">
               <input
                 type="file"
@@ -728,7 +760,6 @@ export default function ChatPage() {
               </button>
             </div>
 
-            {/* Send Button */}
             <button
               onClick={() => sendMessage(message)}
               className="p-3 bg-gradient-to-tr from-rose-500 to-rose-600 text-white rounded-2xl shadow-lg shadow-rose-500/30 hover:scale-105 active:scale-95 transition-all"
@@ -739,7 +770,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Delete Contact Modal */}
+      {/* Delete User/Contact Modal */}
       {contactToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
           <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center border border-rose-100 dark:border-slate-700">
@@ -748,7 +779,7 @@ export default function ChatPage() {
             </div>
             <h3 className="text-base font-bold text-gray-800 dark:text-white">Delete Contact?</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              Remove <span className="font-bold text-rose-500">{contactToDelete}</span> from your private chat list?
+              Remove <span className="font-bold text-rose-500">{contactToDelete}</span> from your contact list?
             </p>
             <div className="flex gap-2 mt-5">
               <button
@@ -805,7 +836,6 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Agora Video / Voice Call Screen Overlay */}
       {callActive && (
         <CallModal
           channelName={activeChat.id}

@@ -12,7 +12,7 @@ export default function SplashScreen({ onFinish }: { onFinish?: () => void }) {
         setVisible(false);
         if (onFinish) onFinish();
       }, 400);
-    }, 2200);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [onFinish]);
 
@@ -20,8 +20,8 @@ export default function SplashScreen({ onFinish }: { onFinish?: () => void }) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#FFF2F5] transition-opacity duration-400 ${
-        fading ? 'opacity-0' : 'opacity-100'
+      className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#FFF2F5] transition-opacity duration-400 ${
+        fading ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
       <div className="relative flex items-center justify-center w-36 h-36">
@@ -52,12 +52,8 @@ export default function SplashScreen({ onFinish }: { onFinish?: () => void }) {
 
       <style jsx>{`
         @keyframes progress {
-          from {
-            width: 0%;
-          }
-          to {
-            width: 100%;
-          }
+          from { width: 0%; }
+          to { width: 100%; }
         }
       `}</style>
     </div>

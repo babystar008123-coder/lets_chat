@@ -1,1170 +1,854 @@
 ﻿"use client";
-
-import React, { useState, useRef, useEffect } from "react";
-import { initializeApp, getApps, getApp } from "firebase/app";
+import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  getDatabase,
-  ref,
-  set,
-  get,
-  onValue,
-  push,
-  remove
-} from "firebase/database";
+  Send,
+  Smile,
+  Video,
+  Phone,
+  Search,
+  Paperclip,
+  Heart,
+  Globe,
+  UserCheck,
+  Mic,
+  MicOff,
+  Sparkles,
+  ArrowRight,
+  Radio,
+  Image as ImageIcon,
+  Copy,
+  Check,
+  Trash2,
+  X,
+  Bell
+} from "lucide-react";
+import MemePanel from "@/components/MemePanel";
+import CallModal from "@/components/CallModal";
+import HeartShower from "@/components/HeartShower";
+import SplashScreen from "@/components/SplashScreen";
+import SwipeableMessage from "@/components/SwipeableMessage";
+import { db, storage } from "@/lib/firebase";
 import {
-  FiSend,
-  FiSmile,
-  FiUserPlus,
-  FiLogOut,
-  FiArrowLeft,
-  FiCheck,
-  FiCamera,
-  FiEdit2,
-  FiHeart,
-  FiX,
-  FiDownload
-} from "react-icons/fi";
-import { FaDice } from "react-icons/fa";
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  doc,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useAgora } from "@/hooks/useAgora";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCbUD9KOprj-tshPfD8Yz9jnhtvfFWwT-E",
-  authDomain: "lets-chat-008.firebaseapp.com",
-  databaseURL: "https://lets-chat-008-default-rtdb.firebaseio.com",
-  projectId: "lets-chat-008",
-  storageBucket: "lets-chat-008.firebasestorage.app",
-  messagingSenderId: "834486224386",
-  appId: "1:834486224386:web:f65c6e5f52d8561de9091b",
-  measurementId: "G-0LNJM2NX09"
-};
-
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getDatabase(app);
-
-interface UserProfile {
-  name: string;
-  mobile: string;
-  pin: string;
-  glassId: string;
-  avatarUrl: string;
-}
-
-interface ChatMessage {
+interface Message {
   id: string;
+  text: string;
   senderId: string;
-  senderName: string;
-  type: "text" | "sticker" | "tod_card";
-  content: string;
-  todType?: "Truth" | "Dare";
-  timestamp: string;
+  type: "text" | "meme" | "image" | "video" | "audio";
+  memeMeta?: { punch: string; actor: string };
+  createdAt?: any;
+  isDeleted?: boolean;
+  replyTo?: { id: string; text: string; sender: string };
 }
 
-interface ChatContact {
-  glassId: string;
-  name: string;
-  avatarUrl: string;
-  lastMessage: string;
-  unread?: boolean;
-}
+export default function ChatPage() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [message, setMessage] = useState("");
+  const [showMemes, setShowMemes] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [myFancyNumber, setMyFancyNumber] = useState("");
+  const [targetId, setTargetId] = useState("");
+  const [activeChat, setActiveChat] = useState<{ id: string; name: string; isGlobal: boolean }>({
+    id: "global",
+    name: "Global Love Room",
+    isGlobal: true,
+  });
+  const [recentChats, setRecentChats] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [callActive, setCallActive] = useState(false);
+  const [callIsVideo, setCallIsVideo] = useState(true);
+  const [heartTrigger, setHeartTrigger] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSec, setRecordSec] = useState(0);
+  const [copied, setCopied] = useState(false);
 
-interface IncomingRequest {
-  fromGlassId: string;
-  fromName: string;
-  fromAvatar: string;
-}
+  // Reply & Delete states
+  const [replyingTo, setReplyingTo] = useState<{ id: string; text: string; sender: string } | null>(null);
+  const [selectedMsgForDelete, setSelectedMsgForDelete] = useState<Message | null>(null);
+  const [contactToDelete, setContactToDelete] = useState<string | null>(null);
 
-const TANGLISH_STICKERS: Record<string, string[]> = {
-  Comedy: [
-    "Aaha! Enna oru puthisaalithanam! 😂",
-    "Enna thalaivaa ipdi panniteenga? 🤦‍♂️",
-    "Naan apdiye shock aayiten! ⚡",
-    "Ipdi pannitiye da parama! 😭",
-    "Neengala mudivu panniteengala? 🤣",
-    "Evanavadhu kaapathunga da! 🏃‍♂️"
-  ],
-  Love: [
-    "Nee illama naan illa pa 💖",
-    "Always thinking about you sweetheart ✨",
-    "Enna paatha epdi theriyudhu? Cute-a? 🥰",
-    "Life time settlement doli nee enakku! 🌹",
-    "Un smile paathe flat aagiten 😍",
-    "Romba miss panren pa unna 💕"
-  ],
-  Sad: [
-    "Manase seri illa da 💔",
-    "Yen da ipdi panreenga? 🥺",
-    "Ellam en neram! 😔",
-    "En kitta matum yen ipdi nadakudhu? 🥀",
-    "Romba valikudhu bro 😢",
-    "Oru naal ellam maarum nu namburan 🌧️"
-  ],
-  Laughing: [
-    "Mudila da saami! LOL! 💀",
-    "Sirippu thaanga mudila baa! 🤣",
-    "Vayiru valikura alavukku sirichiten! 😂",
-    "Orey comedy thaan ponga haha! 😹",
-    "Hahaha semma punch bro! 🔥",
-    "Vera level timing ba! 👏"
-  ]
-};
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recordTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-const withTimeout = (promise: Promise<any>, ms: number = 15000) => {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Network error. Please try again!")), ms)
-    )
-  ]);
-};
+  const {
+    localVideoTrack,
+    remoteUsers,
+    isAudioMuted,
+    isVideoEnabled,
+    startCall,
+    endCall,
+    toggleMute,
+    toggleVideo,
+  } = useAgora();
 
-export default function LetsChatApp() {
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [isRegister, setIsRegister] = useState(true);
-  const [name, setName] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [customGlassId, setCustomGlassId] = useState("");
-  const [pin, setPin] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // PWA Install State
-  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
-  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-
-  const [contacts, setContacts] = useState<ChatContact[]>([]);
-  const [activeChat, setActiveChat] = useState<ChatContact | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-
-  const [incomingRequests, setIncomingRequests] = useState<IncomingRequest[]>([]);
-  const [showRequestsModal, setShowRequestsModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
-
-  const [editName, setEditName] = useState("");
-  const [editGlassId, setEditGlassId] = useState("");
-  const [profileMsg, setProfileMsg] = useState("");
-
-  const [inputMsg, setInputMsg] = useState("");
-  const [showStickerDrawer, setShowStickerDrawer] = useState(false);
-  const [activeStickerTab, setActiveStickerTab] = useState("Comedy");
-  const [showTodModal, setShowTodModal] = useState(false);
-  const [todType, setTodType] = useState<"Truth" | "Dare">("Truth");
-  const [customTodQuestion, setCustomTodQuestion] = useState("");
-
-  const [showAddContactModal, setShowAddContactModal] = useState(false);
-  const [searchGlassId, setSearchGlassId] = useState("");
-  const [addContactError, setAddContactError] = useState("");
-  const [requestStatus, setRequestStatus] = useState("");
-  const [isSending, setIsSending] = useState(false);
-
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
-
-  // PWA பிடிபடும் நிகழ்வு
+  // Notification Permission Request
   useEffect(() => {
-    const handlePrompt = (e: any) => {
-      e.preventDefault();
-      setInstallPromptEvent(e);
-      setShowInstallPrompt(true);
-    };
-
-    window.addEventListener("beforeinstallprompt", handlePrompt);
-
-    if (window.matchMedia("(display-mode: standalone)").matches) {
-      setShowInstallPrompt(false);
-    }
-
     if (typeof window !== "undefined" && "Notification" in window) {
       if (Notification.permission === "default") {
         Notification.requestPermission();
       }
-    }
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", handlePrompt);
-    };
-  }, []);
-
-  const triggerPwaInstall = async () => {
-    if (!installPromptEvent) {
-      alert("Use browser menu (⋮) -> 'Install app'.");
-      return;
-    }
-    installPromptEvent.prompt();
-    const { outcome } = await installPromptEvent.userChoice;
-    if (outcome === "accepted") {
-      setShowInstallPrompt(false);
-      setInstallPromptEvent(null);
-    }
-  };
-
-  useEffect(() => {
-    const saved = localStorage.getItem("lets_chat_active_user");
-    if (saved) {
-      const user = JSON.parse(saved);
-      setCurrentUser(user);
-      setEditName(user.name);
-      setEditGlassId(user.glassId);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw-push.js").catch(console.error);
+      }
     }
   }, []);
 
+  // Initialize Fancy ID
   useEffect(() => {
-    if (!currentUser) return;
+    const savedId =
+      localStorage.getItem("lovechat_id") || `LC-777-${Math.floor(1000 + Math.random() * 9000)}`;
+    localStorage.setItem("lovechat_id", savedId);
+    setMyFancyNumber(savedId);
 
-    const reqRef = ref(db, `requests/${currentUser.glassId}`);
-    const unsubscribeReq = onValue(reqRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const list: IncomingRequest[] = Object.keys(data).map((key) => ({
-          fromGlassId: key,
-          fromName: data[key].senderName || `User ${key}`,
-          fromAvatar: data[key].senderAvatar || `https://api.dicebear.com/7.x/micah/svg?seed=${key}`
-        }));
-        setIncomingRequests(list);
-      } else {
-        setIncomingRequests([]);
-      }
-    });
+    const recents = JSON.parse(localStorage.getItem("lovechat_recents") || "[]");
+    setRecentChats(recents);
 
-    const contactsRef = ref(db, `contacts/${currentUser.glassId}`);
-    const unsubscribeContacts = onValue(contactsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const list: ChatContact[] = Object.keys(data).map((key) => ({
-          glassId: key,
-          name: data[key].name,
-          avatarUrl: data[key].avatarUrl,
-          lastMessage: data[key].lastMessage || "Connected",
-          unread: data[key].unread || false
-        }));
-        setContacts(list);
-      } else {
-        setContacts([]);
-      }
-    });
+    setDoc(doc(db, "users", savedId), { lastSeen: serverTimestamp(), online: true }, { merge: true });
+  }, []);
 
-    return () => {
-      unsubscribeReq();
-      unsubscribeContacts();
-    };
-  }, [currentUser]);
-
-  // வாட்ஸ்அப் போன்ற புஷ் நோட்டிஃபிகேஷன் அமைத்தல்
+  // Listen for real-time messages
   useEffect(() => {
-    if (!currentUser || !activeChat) return;
+    const messagesRef = activeChat.isGlobal
+      ? collection(db, "global_messages")
+      : collection(db, "private_chats", activeChat.id, "messages");
 
-    const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
-    const msgRef = ref(db, `chats/${roomId}/messages`);
-
-    const unsubscribeMessages = onValue(msgRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const parsed: ChatMessage[] = Object.keys(data).map((k) => ({
-          id: k,
-          ...data[k]
+    const q = query(messagesRef, orderBy("createdAt", "asc"));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const msgs = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<Message, "id">),
         }));
-        setMessages(parsed);
-
-        const lastMsg = parsed[parsed.length - 1];
-        if (
-          lastMsg &&
-          lastMsg.senderId !== currentUser.glassId &&
-          document.visibilityState !== "visible"
-        ) {
-          if ("serviceWorker" in navigator && Notification.permission === "granted") {
-            navigator.serviceWorker.ready.then((reg) => {
-              reg.showNotification(`LetsChat • ${lastMsg.senderName || "New Message"}`, {
-                body: lastMsg.type === "text" ? lastMsg.content : `Sent a ${lastMsg.type}`,
-                icon: "/icon-192.png",
-                badge: "/icon-192.png"
+        
+        // லாக் ஸ்கிரீனில் புதிய மெசேஜ் நோட்டிபிகேஷன் அனுப்புதல்
+        if (msgs.length > messages.length && messages.length > 0) {
+          const lastMsg = msgs[msgs.length - 1];
+          if (lastMsg.senderId !== myFancyNumber && typeof window !== "undefined" && "Notification" in window) {
+            if (Notification.permission === "granted") {
+              navigator.serviceWorker?.ready.then((reg) => {
+                reg.showNotification(`New message from ${lastMsg.senderId}`, {
+                  body: lastMsg.text,
+                  icon: "/icon-192x192.png",
+                  vibrate: [200, 100, 200],
+                });
               });
-            });
+            }
           }
         }
-      } else {
-        setMessages([]);
+
+        setMessages(msgs);
+        setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      },
+      (error) => {
+        console.warn("Firestore listener:", error);
       }
-    });
+    );
 
-    return () => unsubscribeMessages();
-  }, [currentUser, activeChat]);
+    return () => unsubscribe();
+  }, [activeChat, messages.length, myFancyNumber]);
 
+  // Voice note timer
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const handleOpenChat = async (contact: ChatContact) => {
-    setActiveChat(contact);
-    if (currentUser && contact.unread) {
-      await set(ref(db, `contacts/${currentUser.glassId}/${contact.glassId}/unread`), false);
+    if (isRecording) {
+      setRecordSec(0);
+      recordTimerRef.current = setInterval(() => {
+        setRecordSec((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
     }
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting) return;
-
-    if (!name.trim()) return setAuthError("Please enter your name.");
-    if (mobile.length !== 10) return setAuthError("Please enter a valid 10-digit mobile number.");
-    if (customGlassId.length !== 5) return setAuthError("Please enter a 5-digit Fancy Glass ID.");
-    if (pin.length !== 4) return setAuthError("PIN must be exactly 4 digits.");
-
-    setIsSubmitting(true);
-    setAuthError("");
-
-    try {
-      const idCheck: any = await withTimeout(get(ref(db, `users/${customGlassId}`)));
-      if (idCheck.exists()) {
-        setIsSubmitting(false);
-        return setAuthError("This 5-Digit ID is already taken. Please pick another.");
-      }
-
-      const newUser: UserProfile = {
-        name: name.trim(),
-        mobile,
-        pin,
-        glassId: customGlassId,
-        avatarUrl: `https://api.dicebear.com/7.x/micah/svg?seed=${customGlassId}`
-      };
-
-      await withTimeout(set(ref(db, `users/${customGlassId}`), newUser));
-      await withTimeout(set(ref(db, `mobileIndex/${mobile}`), customGlassId));
-
-      localStorage.setItem("lets_chat_active_user", JSON.stringify(newUser));
-      setCurrentUser(newUser);
-      setEditName(newUser.name);
-      setEditGlassId(newUser.glassId);
-      setAuthError("");
-    } catch {
-      setAuthError("Network error. Please try again!");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting) return;
-
-    if (mobile.length !== 10) return setAuthError("Please enter your 10-digit mobile number.");
-    if (pin.length !== 4) return setAuthError("Please enter your 4-digit PIN.");
-
-    setIsSubmitting(true);
-    setAuthError("");
-
-    try {
-      const mobileSnap: any = await withTimeout(get(ref(db, `mobileIndex/${mobile}`)));
-      if (!mobileSnap.exists()) {
-        setIsSubmitting(false);
-        return setAuthError("Mobile number not registered. Please switch to Register.");
-      }
-
-      const userGlassId = mobileSnap.val();
-      const userSnap: any = await withTimeout(get(ref(db, `users/${userGlassId}`)));
-      if (!userSnap.exists()) {
-        setIsSubmitting(false);
-        return setAuthError("User record not found.");
-      }
-
-      const user: UserProfile = userSnap.val();
-      if (user.pin !== pin) {
-        setIsSubmitting(false);
-        return setAuthError("Incorrect PIN entered.");
-      }
-
-      localStorage.setItem("lets_chat_active_user", JSON.stringify(user));
-      setCurrentUser(user);
-      setEditName(user.name);
-      setEditGlassId(user.glassId);
-      setAuthError("");
-    } catch {
-      setAuthError("Network error. Please try again!");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("lets_chat_active_user");
-    setCurrentUser(null);
-    setActiveChat(null);
-    setMobile("");
-    setPin("");
-    setName("");
-    setCustomGlassId("");
-    setIsRegister(true);
-  };
-
-  const handleSendConnectionRequest = async () => {
-    if (!currentUser || isSending) return;
-    if (searchGlassId.trim().length !== 5) {
-      setAddContactError("Enter a valid 5-digit Glass ID.");
-      return;
-    }
-    if (searchGlassId === currentUser.glassId) {
-      setAddContactError("You cannot connect with your own ID.");
-      return;
-    }
-
-    setIsSending(true);
-    setAddContactError("");
-    setRequestStatus("Verifying ID...");
-
-    try {
-      const targetUserSnap: any = await withTimeout(get(ref(db, `users/${searchGlassId}`)));
-      if (!targetUserSnap.exists()) {
-        setIsSending(false);
-        setRequestStatus("");
-        setAddContactError("No user found with this 5-digit ID.");
-        return;
-      }
-
-      setRequestStatus("Sending request...");
-      await withTimeout(
-        set(ref(db, `requests/${searchGlassId}/${currentUser.glassId}`), {
-          senderGlassId: currentUser.glassId,
-          senderName: currentUser.name,
-          senderAvatar: currentUser.avatarUrl,
-          timestamp: Date.now()
-        })
-      );
-
-      setIsSending(false);
-      setRequestStatus("Request sent! Waiting for acceptance...");
-      setTimeout(() => {
-        setShowAddContactModal(false);
-        setSearchGlassId("");
-        setRequestStatus("");
-        setAddContactError("");
-      }, 1500);
-    } catch {
-      setIsSending(false);
-      setRequestStatus("");
-      setAddContactError("Network error. Please try again!");
-    }
-  };
-
-  const handleAcceptRequest = async (req: IncomingRequest) => {
-    if (!currentUser) return;
-    try {
-      await withTimeout(
-        set(ref(db, `contacts/${currentUser.glassId}/${req.fromGlassId}`), {
-          glassId: req.fromGlassId,
-          name: req.fromName,
-          avatarUrl: req.fromAvatar,
-          lastMessage: "Connected! Say Hi 👋",
-          unread: false
-        })
-      );
-
-      await withTimeout(
-        set(ref(db, `contacts/${req.fromGlassId}/${currentUser.glassId}`), {
-          glassId: currentUser.glassId,
-          name: currentUser.name,
-          avatarUrl: currentUser.avatarUrl,
-          lastMessage: "Connected! Say Hi 👋",
-          unread: false
-        })
-      );
-
-      await withTimeout(remove(ref(db, `requests/${currentUser.glassId}/${req.fromGlassId}`)));
-    } catch {
-      alert("Network error. Please try again!");
-    }
-  };
-
-  const handleDeclineRequest = async (fromGlassId: string) => {
-    if (!currentUser) return;
-    await remove(ref(db, `requests/${currentUser.glassId}/${fromGlassId}`));
-  };
-
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && currentUser) {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const newUrl = reader.result as string;
-        const updated = { ...currentUser, avatarUrl: newUrl };
-        setCurrentUser(updated);
-        localStorage.setItem("lets_chat_active_user", JSON.stringify(updated));
-        await set(ref(db, `users/${currentUser.glassId}/avatarUrl`), newUrl);
-        setProfileMsg("Profile Picture updated!");
-        setTimeout(() => setProfileMsg(""), 2000);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    if (!currentUser) return;
-    if (!editName.trim()) return setProfileMsg("Name cannot be empty.");
-    if (editGlassId.length !== 5) return setProfileMsg("Glass ID must be 5 digits.");
-
-    try {
-      if (editGlassId !== currentUser.glassId) {
-        const check: any = await withTimeout(get(ref(db, `users/${editGlassId}`)));
-        if (check.exists()) {
-          return setProfileMsg("This ID is already taken. Try another 5-digit number.");
-        }
-
-        await remove(ref(db, `users/${currentUser.glassId}`));
-        await set(ref(db, `mobileIndex/${currentUser.mobile}`), editGlassId);
-      }
-
-      const updated: UserProfile = {
-        ...currentUser,
-        name: editName.trim(),
-        glassId: editGlassId
-      };
-
-      await set(ref(db, `users/${editGlassId}`), updated);
-      localStorage.setItem("lets_chat_active_user", JSON.stringify(updated));
-      setCurrentUser(updated);
-      setProfileMsg("Profile updated successfully!");
-      setTimeout(() => {
-        setProfileMsg("");
-        setShowProfileModal(false);
-      }, 1200);
-    } catch {
-      setProfileMsg("Network error. Please try again!");
-    }
-  };
-
-  const sendMessage = async (type: "text" | "sticker" | "tod_card", content: string, mode?: "Truth" | "Dare") => {
-    if (!currentUser || !activeChat) return;
-
-    const roomId = [currentUser.glassId, activeChat.glassId].sort().join("_");
-    const newMsgRef = push(ref(db, `chats/${roomId}/messages`));
-
-    const msgPayload = {
-      senderId: currentUser.glassId,
-      senderName: currentUser.name,
-      type,
-      content,
-      todType: mode || null,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    return () => {
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
     };
+  }, [isRecording]);
 
-    await set(newMsgRef, msgPayload);
-    const preview = type === "text" ? content : `Sent a ${type}`;
+  const selectPrivateChat = (partnerId: string) => {
+    if (!partnerId || partnerId === myFancyNumber) return;
+    const roomId = [myFancyNumber, partnerId].sort().join("_");
+    setActiveChat({ id: roomId, name: partnerId, isGlobal: false });
+    setTargetId("");
 
-    await set(ref(db, `contacts/${currentUser.glassId}/${activeChat.glassId}/lastMessage`), preview);
-    await set(ref(db, `contacts/${currentUser.glassId}/${activeChat.glassId}/unread`), false);
-
-    await set(ref(db, `contacts/${activeChat.glassId}/${currentUser.glassId}/lastMessage`), preview);
-    await set(ref(db, `contacts/${activeChat.glassId}/${currentUser.glassId}/unread`), true);
+    if (!recentChats.includes(partnerId)) {
+      const updated = [partnerId, ...recentChats];
+      setRecentChats(updated);
+      localStorage.setItem("lovechat_recents", JSON.stringify(updated));
+    }
   };
 
-  const handleSendText = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputMsg.trim()) return;
-    sendMessage("text", inputMsg.trim());
-    setInputMsg("");
+  const confirmDeleteContact = (id: string) => {
+    const updated = recentChats.filter((chatId) => chatId !== id);
+    setRecentChats(updated);
+    localStorage.setItem("lovechat_recents", JSON.stringify(updated));
+    if (activeChat.name === id) {
+      setActiveChat({ id: "global", name: "Global Love Room", isGlobal: true });
+    }
+    setContactToDelete(null);
   };
 
-  const handleSendCustomTod = () => {
-    if (!customTodQuestion.trim()) return;
-    sendMessage("tod_card", customTodQuestion.trim(), todType);
-    setCustomTodQuestion("");
-    setShowTodModal(false);
+  const handleDeleteForMe = (msgId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setSelectedMsgForDelete(null);
   };
 
-  if (!currentUser) {
-    return (
-      <main className="min-h-screen bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-4">
-        <div className="w-full max-w-sm bg-white/90 backdrop-blur-2xl border border-rose-200/60 p-6 rounded-3xl shadow-2xl space-y-5">
-          <div className="text-center space-y-1">
-            <h1 className="text-3xl font-extrabold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
-              Let's Chat
-            </h1>
-            <p className="text-xs text-gray-500 font-semibold tracking-wide">Secure 1-on-1 Messenger</p>
+  const handleDeleteForEveryone = async (msgId: string) => {
+    try {
+      const docRef = activeChat.isGlobal
+        ? doc(db, "global_messages", msgId)
+        : doc(db, "private_chats", activeChat.id, "messages", msgId);
+      await updateDoc(docRef, {
+        isDeleted: true,
+        text: "🚫 This message was deleted",
+      });
+    } catch (e) {
+      console.error("Delete for everyone error:", e);
+    }
+    setSelectedMsgForDelete(null);
+  };
+
+  const sendMessage = async (
+    text: string,
+    type: "text" | "meme" | "image" | "video" | "audio" = "text",
+    memeMeta?: { punch: string; actor: string }
+  ) => {
+    if (!text.trim()) return;
+
+    const messagesRef = activeChat.isGlobal
+      ? collection(db, "global_messages")
+      : collection(db, "private_chats", activeChat.id, "messages");
+
+    try {
+      await addDoc(messagesRef, {
+        text,
+        senderId: myFancyNumber,
+        createdAt: serverTimestamp(),
+        type,
+        ...(memeMeta ? { memeMeta } : {}),
+        ...(replyingTo ? { replyTo: replyingTo } : {}),
+      });
+      setMessage("");
+      setReplyingTo(null);
+      setShowMemes(false);
+    } catch (e) {
+      console.error("Message send failure:", e);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+
+    try {
+      const fileType = file.type.split("/")[0];
+      const storageRef = ref(storage, `chat_media/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      const type = fileType === "image" ? "image" : fileType === "video" ? "video" : "audio";
+      await sendMessage(downloadURL, type);
+    } catch (err) {
+      alert("Failed to upload media. Ensure Firebase Storage is initialized.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const sendVoiceNote = async () => {
+    setIsRecording(false);
+    const simulatedAudioUrl =
+      "https://actions.google.com/sounds/v1/ambiences/outdoor_festival_ambience.ogg";
+    await sendMessage(simulatedAudioUrl, "audio");
+  };
+
+  const copyMyId = () => {
+    navigator.clipboard.writeText(myFancyNumber);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const triggerLoveBurst = () => {
+    setHeartTrigger((prev) => prev + 1);
+    sendMessage("❤️ LOVE SHOWER ❤️", "text");
+  };
+
+  const initiateCall = async (video: boolean) => {
+    setCallIsVideo(video);
+    setCallActive(true);
+    await startCall(activeChat.id, video);
+  };
+
+  const terminateCall = async () => {
+    await endCall();
+    setCallActive(false);
+  };
+
+  return (
+    <div className="flex h-screen bg-slate-900 overflow-hidden font-sans select-none relative">
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      <HeartShower trigger={heartTrigger} />
+
+      {/* Decorative ambient gradient */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-rose-500/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Left Sidebar */}
+      <div className="w-full md:w-88 flex flex-col bg-white/95 dark:bg-slate-900/90 backdrop-blur-2xl border-r border-rose-100 dark:border-rose-950/40 z-20 shadow-2xl">
+        <div className="p-5 border-b border-rose-100/60 dark:border-rose-950/40 bg-gradient-to-br from-rose-50/70 via-white to-indigo-50/30 dark:from-slate-900 dark:to-slate-800">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-500 to-rose-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/30">
+                <Heart size={20} className="fill-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-black bg-gradient-to-r from-rose-600 to-indigo-600 bg-clip-text text-transparent">
+                  Lets Chat
+                </h1>
+                <p className="text-[10px] text-gray-500 font-semibold tracking-wider uppercase">
+                  Love & Friends UI
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  if (typeof window !== "undefined" && "Notification" in window) {
+                    Notification.requestPermission().then((perm) => alert("Notification status: " + perm));
+                  }
+                }}
+                className="p-2 rounded-2xl bg-rose-100/70 hover:bg-rose-200 text-rose-600 transition-all"
+                title="Enable Lockscreen Notifications"
+              >
+                <Bell size={16} />
+              </button>
+              <button
+                onClick={triggerLoveBurst}
+                className="p-2 rounded-2xl bg-rose-100/70 hover:bg-rose-200 text-rose-600 transition-all hover:scale-105 active:scale-95"
+                title="Send Love Shower"
+              >
+                <Sparkles size={16} />
+              </button>
+            </div>
           </div>
 
-          <div className="flex bg-rose-100/60 p-1 rounded-2xl">
+          <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white dark:bg-slate-800 border border-rose-200/60 dark:border-rose-900/40 shadow-sm">
+            <div>
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Your Fancy ID</p>
+              <p className="text-xs font-black text-rose-600 dark:text-rose-400 tracking-wider">
+                {myFancyNumber || "Generating ID..."}
+              </p>
+            </div>
             <button
-              type="button"
-              onClick={() => { setIsRegister(true); setAuthError(""); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                isRegister ? "bg-rose-500 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
-              }`}
+              onClick={copyMyId}
+              className="flex items-center gap-1 text-[10px] font-bold bg-rose-500/10 text-rose-600 px-2.5 py-1.5 rounded-xl hover:bg-rose-500 hover:text-white transition-all"
             >
-              Register (New User)
-            </button>
-            <button
-              type="button"
-              onClick={() => { setIsRegister(false); setAuthError(""); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                !isRegister ? "bg-white text-rose-600 shadow-sm" : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Login
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              <span>{copied ? "Copied" : "Copy"}</span>
             </button>
           </div>
 
-          {authError && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-bold">
-              {authError}
+          <div className="mt-3 relative">
+            <input
+              type="text"
+              value={targetId}
+              onChange={(e) => setTargetId(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && selectPrivateChat(targetId.trim())}
+              placeholder="Search lover's ID..."
+              className="w-full pl-9 pr-8 py-2.5 text-xs rounded-2xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-slate-800/60 text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:ring-2 focus:ring-rose-400 transition-all"
+            />
+            <Search className="absolute left-3 top-3 text-gray-400" size={14} />
+            {targetId && (
+              <button
+                onClick={() => selectPrivateChat(targetId.trim())}
+                className="absolute right-2 top-2 p-1.5 rounded-xl bg-rose-500 text-white hover:bg-rose-600"
+              >
+                <ArrowRight size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          <div
+            onClick={() => setActiveChat({ id: "global", name: "Global Love Room", isGlobal: true })}
+            className={`p-3.5 rounded-2xl cursor-pointer transition-all flex items-center justify-between border ${
+              activeChat.isGlobal
+                ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/30 border-transparent scale-[1.02]"
+                : "bg-white dark:bg-slate-800 hover:bg-rose-50/60 dark:hover:bg-slate-700/60 text-gray-700 dark:text-gray-200 border-rose-100 dark:border-slate-700"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-2 rounded-xl ${
+                  activeChat.isGlobal ? "bg-white/20 text-white" : "bg-rose-100 text-rose-600"
+                }`}
+              >
+                <Globe size={18} />
+              </div>
+              <div>
+                <p className="font-black text-sm">Global Love Room</p>
+                <p className={`text-[10px] ${activeChat.isGlobal ? "text-rose-100" : "text-gray-400"}`}>
+                  Public community stream
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            </div>
+          </div>
+
+          <div className="pt-3">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2 mb-2">
+              Private Connections
+            </p>
+            {recentChats.length === 0 ? (
+              <div className="p-4 rounded-2xl border border-dashed border-rose-200/60 dark:border-slate-800 text-center">
+                <p className="text-xs text-gray-400">No private chats yet.</p>
+                <p className="text-[10px] text-rose-500 mt-1">Search ID above to start 1-on-1!</p>
+              </div>
+            ) : (
+              recentChats.map((id) => (
+                <div
+                  key={id}
+                  onClick={() => selectPrivateChat(id)}
+                  className={`p-3 rounded-2xl cursor-pointer transition-all flex items-center justify-between mb-1.5 border group ${
+                    activeChat.name === id
+                      ? "bg-rose-500/10 dark:bg-rose-500/20 border-rose-400 text-rose-600 font-bold shadow-sm"
+                      : "bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border-rose-100 dark:border-slate-800 text-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-400 to-indigo-500 flex items-center justify-center text-white text-xs font-black shadow-sm">
+                      {id.slice(-2)}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold">{id}</p>
+                      <p className="text-[9px] text-gray-400">1-on-1 Private Chat</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {/* Delete User/Contact Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setContactToDelete(id);
+                      }}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-slate-700 transition-all"
+                      title="Delete Contact"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                    <UserCheck size={14} className="text-rose-500" />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Canvas */}
+      <div className="flex-1 flex flex-col relative bg-slate-50 dark:bg-slate-950">
+        <div className="h-18 flex items-center justify-between px-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-rose-100/60 dark:border-rose-950/40 shadow-sm z-10">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-500 to-indigo-600 flex items-center justify-center text-white font-black shadow-lg shadow-rose-500/20 text-lg">
+                {activeChat.isGlobal ? "❤️" : "💌"}
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-extrabold text-gray-900 dark:text-white text-base leading-tight">
+                  {activeChat.name}
+                </h2>
+                {!activeChat.isGlobal && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-bold">
+                    Private
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-emerald-500 font-bold flex items-center gap-1 mt-0.5">
+                <Radio size={12} className="animate-pulse" />
+                Real-Time Connected
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => initiateCall(false)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-rose-50 dark:bg-slate-800 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-all hover:scale-105 active:scale-95 shadow-sm"
+              title="Voice Call"
+            >
+              <Phone size={15} />
+              <span className="hidden sm:inline">Voice</span>
+            </button>
+            <button
+              onClick={() => initiateCall(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-rose-500 to-indigo-600 text-white font-bold text-xs shadow-md shadow-rose-500/20 transition-all hover:scale-105 active:scale-95"
+              title="Video Call"
+            >
+              <Video size={15} />
+              <span className="hidden sm:inline">Video Call</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Message Stream */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400">
+              <div className="w-16 h-16 rounded-3xl bg-rose-100/60 dark:bg-slate-800 flex items-center justify-center text-rose-500 text-3xl mb-3 animate-bounce">
+                💌
+              </div>
+              <p className="text-sm font-bold text-gray-700 dark:text-gray-300">No messages in this room yet.</p>
+            </div>
+          ) : (
+            messages.map((msg) => {
+              const isMe = msg.senderId === myFancyNumber;
+              const timeFormatted = msg.createdAt?.toDate
+                ? msg.createdAt.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : "Sending...";
+
+              return (
+                <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                  <SwipeableMessage
+                    onReply={() =>
+                      setReplyingTo({
+                        id: msg.id,
+                        text: msg.type === "text" ? msg.text : `[${msg.type}]`,
+                        sender: msg.senderId,
+                      })
+                    }
+                    onLongPress={() => setSelectedMsgForDelete(msg)}
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      className={`p-4 rounded-3xl shadow-sm max-w-[85%] md:max-w-[65%] cursor-pointer ${
+                        isMe
+                          ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-tr-none shadow-rose-500/20 ml-auto"
+                          : "bg-white dark:bg-slate-800 text-gray-800 dark:text-white rounded-tl-none border border-rose-100/70 dark:border-slate-700/60 shadow-sm mr-auto"
+                      }`}
+                    >
+                      {msg.replyTo && (
+                        <div
+                          className={`mb-2 p-2 rounded-xl border-l-4 text-xs ${
+                            isMe
+                              ? "bg-black/20 border-white text-white/90"
+                              : "bg-rose-50 dark:bg-slate-700/60 border-rose-500 text-gray-700 dark:text-gray-200"
+                          }`}
+                        >
+                          <p className="font-extrabold text-[10px] uppercase tracking-wider opacity-80">
+                            Replying to {msg.replyTo.sender}
+                          </p>
+                          <p className="line-clamp-1 italic">{msg.replyTo.text}</p>
+                        </div>
+                      )}
+
+                      <p
+                        className={`text-[10px] font-extrabold mb-1.5 opacity-80 ${
+                          isMe ? "text-rose-100" : "text-rose-500"
+                        }`}
+                      >
+                        {msg.senderId}
+                      </p>
+
+                      {msg.isDeleted ? (
+                        <p className="text-xs italic opacity-70">🚫 This message was deleted</p>
+                      ) : (
+                        <>
+                          {msg.type === "meme" && (
+                            <div className="rounded-2xl overflow-hidden bg-black/10 dark:bg-black/30 p-2 space-y-2 border border-white/20">
+                              <img
+                                src={msg.text}
+                                alt="Tamil Meme"
+                                className="w-56 h-56 rounded-xl object-cover bg-white/10 mx-auto"
+                              />
+                              {msg.memeMeta && (
+                                <div className="text-center p-1.5 bg-black/20 rounded-xl">
+                                  <p className="text-xs font-black italic">"{msg.memeMeta.punch}"</p>
+                                  <p className="text-[10px] opacity-80 mt-0.5">- {msg.memeMeta.actor}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {msg.type === "image" && (
+                            <img
+                              src={msg.text}
+                              alt="Shared media"
+                              className="w-64 max-h-80 object-cover rounded-2xl shadow-sm"
+                            />
+                          )}
+
+                          {msg.type === "video" && (
+                            <video src={msg.text} controls className="w-64 rounded-2xl shadow-sm" />
+                          )}
+
+                          {msg.type === "audio" && (
+                            <div className="flex items-center gap-3 w-64 py-1">
+                              <div className="p-2 rounded-full bg-rose-500/20 text-rose-500">
+                                <Mic size={18} />
+                              </div>
+                              <audio src={msg.text} controls className="w-full h-8" />
+                            </div>
+                          )}
+
+                          {msg.type === "text" && (
+                            <p className="text-sm font-medium leading-relaxed break-words">{msg.text}</p>
+                          )}
+                        </>
+                      )}
+
+                      <div className="flex items-center justify-between mt-1.5 pt-1 border-t border-white/10">
+                        {/* Delete trigger icon on bubble */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMsgForDelete(msg);
+                          }}
+                          className="opacity-60 hover:opacity-100 text-[10px] flex items-center gap-1"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                        <p
+                          className={`text-[9px] font-semibold opacity-70 ${
+                            isMe ? "text-rose-100" : "text-gray-400"
+                          }`}
+                        >
+                          {timeFormatted}
+                        </p>
+                      </div>
+                    </motion.div>
+                  </SwipeableMessage>
+                </div>
+              );
+            })
+          )}
+          <div ref={scrollRef} />
+        </div>
+
+        {/* Input Bar */}
+        <div className="p-4 relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-t border-rose-100/60 dark:border-rose-950/40">
+          {isUploading && (
+            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-sm text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-xl animate-bounce">
+              Uploading media to love chat... 🚀
             </div>
           )}
 
-          <form onSubmit={isRegister ? handleRegister : handleLogin} className="space-y-4">
-            {isRegister && (
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5">Full Name</label>
-                <input
-                  type="text"
-                  placeholder="Enter your name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 placeholder-gray-400 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-                  required
-                />
+          {replyingTo && (
+            <div className="max-w-4xl mx-auto mb-2 p-2.5 px-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-rose-500 shadow-md flex items-center justify-between">
+              <div className="flex flex-col text-xs">
+                <span className="font-bold text-rose-500">Replying to {replyingTo.sender}</span>
+                <span className="text-gray-500 dark:text-gray-400 line-clamp-1">{replyingTo.text}</span>
               </div>
-            )}
+              <button
+                onClick={() => setReplyingTo(null)}
+                className="p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
 
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">Mobile Number</label>
-              <div className="flex rounded-xl overflow-hidden border border-gray-300">
-                <span className="inline-flex items-center px-3.5 bg-gray-100 text-xs font-bold text-gray-700 border-r border-gray-300">
-                  +91
-                </span>
-                <input
-                  type="tel"
-                  placeholder="10-digit mobile number"
-                  value={mobile}
-                  onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  maxLength={10}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-sm text-gray-900 placeholder-gray-400 font-medium focus:bg-white focus:outline-none"
-                  required
-                />
+          {isRecording && (
+            <div className="max-w-4xl mx-auto mb-2 flex items-center justify-between p-3 rounded-2xl bg-rose-600 text-white shadow-xl animate-pulse">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-white animate-ping" />
+                <span className="text-xs font-bold">Recording Voice Note... {recordSec}s</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsRecording(false)}
+                  className="text-xs bg-white/20 px-3 py-1 rounded-xl font-bold hover:bg-white/30"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendVoiceNote}
+                  className="text-xs bg-white text-rose-600 px-3 py-1 rounded-xl font-black hover:bg-rose-50"
+                >
+                  Send Audio
+                </button>
               </div>
             </div>
+          )}
 
-            {isRegister && (
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5">Choose 5-Digit Glass ID</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 77777 or 12345"
-                  value={customGlassId}
-                  onChange={(e) => setCustomGlassId(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                  maxLength={5}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-center tracking-[0.3em] text-base font-bold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-                  required
-                />
-              </div>
-            )}
+          <div className="max-w-4xl mx-auto flex items-end gap-2 bg-slate-100/80 dark:bg-slate-800/80 p-2.5 rounded-3xl border border-rose-200/60 dark:border-rose-900/40 focus-within:ring-2 focus-within:ring-rose-500/40 transition-all shadow-inner">
+            <div className="relative">
+              <button
+                onClick={() => setShowMemes(!showMemes)}
+                className={`p-2.5 rounded-2xl transition-all ${
+                  showMemes
+                    ? "bg-rose-500 text-white shadow-md shadow-rose-500/30 scale-105"
+                    : "text-gray-400 hover:text-rose-500 hover:bg-white dark:hover:bg-slate-700"
+                }`}
+                title="Tamil Memes & Dialogues"
+              >
+                <Smile size={22} />
+              </button>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">4-Digit PIN</label>
+              <AnimatePresence>
+                {showMemes && (
+                  <div className="absolute bottom-14 left-0 z-50">
+                    <MemePanel
+                      onSelect={(item) =>
+                        sendMessage(item.url, "meme", { punch: item.punch, actor: item.actor })
+                      }
+                    />
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <textarea
+              rows={1}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage(message);
+                }
+              }}
+              placeholder={`Send message to ${activeChat.name}...`}
+              className="flex-1 py-2 px-3 outline-none text-sm bg-transparent resize-none max-h-32 text-gray-800 dark:text-white placeholder-gray-400 font-medium"
+            />
+
+            <div className="flex items-center gap-1">
               <input
-                type="password"
-                inputMode="numeric"
-                placeholder="••••"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                maxLength={4}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-center tracking-[0.5em] text-lg font-black text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-                required
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*,video/*,audio/*"
+                onChange={handleFileUpload}
               />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-2.5 text-gray-400 hover:text-rose-500 hover:bg-white dark:hover:bg-slate-700 rounded-2xl transition-all"
+                title="Attach Media"
+              >
+                <Paperclip size={20} />
+              </button>
+
+              <button
+                onClick={() => setIsRecording(!isRecording)}
+                className={`p-2.5 rounded-2xl transition-all ${
+                  isRecording
+                    ? "bg-rose-600 text-white animate-bounce"
+                    : "text-gray-400 hover:text-rose-500 hover:bg-white dark:hover:bg-slate-700"
+                }`}
+                title="Voice Note"
+              >
+                <Mic size={20} />
+              </button>
             </div>
 
             <button
-              type="submit"
-              disabled={isSubmitting}
-              className={`w-full py-3 text-white rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all mt-2 ${
-                isSubmitting ? "bg-rose-300 cursor-not-allowed" : "bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600"
-              }`}
+              onClick={() => sendMessage(message)}
+              className="p-3 bg-gradient-to-tr from-rose-500 to-rose-600 text-white rounded-2xl shadow-lg shadow-rose-500/30 hover:scale-105 active:scale-95 transition-all"
             >
-              {isSubmitting
-                ? "Processing..."
-                : isRegister
-                ? "Create Fresh Account"
-                : "Sign In"}
+              <Send size={18} />
             </button>
-          </form>
+          </div>
         </div>
-      </main>
-    );
-  }
-
-  return (
-    <div className="h-screen w-full bg-gradient-to-br from-rose-100 via-pink-50 to-white flex items-center justify-center p-0 sm:p-4 overflow-hidden">
-      <div className="w-full h-full sm:max-w-md sm:h-[92vh] bg-white/80 backdrop-blur-2xl border border-white/60 sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
-        
-        {/* PWA INSTALL BANNER */}
-        {showInstallPrompt && (
-          <div className="bg-gradient-to-r from-rose-500 to-pink-600 text-white p-2.5 px-4 flex items-center justify-between shadow-lg z-30">
-            <div className="flex items-center gap-2">
-              <FiDownload className="text-base animate-bounce" />
-              <div>
-                <p className="text-xs font-bold leading-tight">Install LetsChat</p>
-                <p className="text-[10px] text-rose-100">Standalone app without Chrome badge</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={triggerPwaInstall}
-                className="px-3 py-1 bg-white text-rose-600 rounded-lg text-xs font-extrabold shadow active:scale-95 transition-all"
-              >
-                Install Now
-              </button>
-              <button
-                onClick={() => setShowInstallPrompt(false)}
-                className="text-white/80 hover:text-white p-1"
-              >
-                <FiX className="text-sm" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!activeChat ? (
-          <>
-            <header className="p-4 border-b border-rose-100 flex items-center justify-between bg-white/60">
-              <div
-                onClick={() => setShowProfileModal(true)}
-                className="flex items-center gap-3 cursor-pointer group"
-                title="Click to edit Profile"
-              >
-                <div className="relative">
-                  <img
-                    src={currentUser.avatarUrl}
-                    alt={currentUser.name}
-                    className="w-11 h-11 rounded-full object-cover border-2 border-rose-300 group-hover:opacity-85 transition-all"
-                  />
-                  <div className="absolute -bottom-1 -right-1 bg-rose-500 text-white p-1 rounded-full text-[9px] shadow">
-                    <FiEdit2 />
-                  </div>
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-gray-900 leading-tight group-hover:text-rose-600 transition-colors">
-                    {currentUser.name}
-                  </h2>
-                  <span className="text-[10px] uppercase font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">
-                    ID: {currentUser.glassId}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowRequestsModal(true)}
-                  className="relative p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
-                  title="Incoming Requests"
-                >
-                  <FiHeart className="text-lg fill-rose-500/20" />
-                  {incomingRequests.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center animate-bounce shadow">
-                      {incomingRequests.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => setShowAddContactModal(true)}
-                  className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
-                  title="Add Connection"
-                >
-                  <FiUserPlus className="text-lg" />
-                </button>
-
-                <button
-                  onClick={handleLogout}
-                  className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-all"
-                  title="Logout"
-                >
-                  <FiLogOut className="text-lg" />
-                </button>
-              </div>
-            </header>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {contacts.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
-                  <div className="w-16 h-16 rounded-full bg-rose-100 flex items-center justify-center text-rose-500 text-2xl">
-                    👋
-                  </div>
-                  <h3 className="font-bold text-gray-800 text-base">Zero Contacts</h3>
-                  <p className="text-xs text-gray-600 max-w-xs">
-                    Your account is private. Share your 5-digit Glass ID (<strong>{currentUser.glassId}</strong>) or add a friend's ID to begin chatting.
-                  </p>
-                  <button
-                    onClick={() => setShowAddContactModal(true)}
-                    className="px-4 py-2 bg-rose-500 text-white rounded-xl text-xs font-bold shadow hover:bg-rose-600 transition-all"
-                  >
-                    Enter 5-Digit ID
-                  </button>
-                </div>
-              ) : (
-                contacts.map((contact) => (
-                  <div
-                    key={contact.glassId}
-                    onClick={() => handleOpenChat(contact)}
-                    className="flex items-center gap-3 p-3 bg-white/80 hover:bg-white rounded-2xl border border-rose-100 cursor-pointer transition-all shadow-sm relative"
-                  >
-                    <img
-                      src={contact.avatarUrl}
-                      alt={contact.name}
-                      className="w-12 h-12 rounded-full object-cover border border-rose-200"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="font-bold text-sm text-gray-900 truncate">{contact.name}</p>
-                        <span className="text-[10px] text-rose-500 font-bold">#{contact.glassId}</span>
-                      </div>
-                      <p className="text-xs text-gray-600 truncate mt-0.5">{contact.lastMessage}</p>
-                    </div>
-
-                    {contact.unread && (
-                      <div className="w-3 h-3 bg-rose-500 rounded-full border-2 border-white shadow-md animate-pulse"></div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <header className="p-3 border-b border-rose-100 flex items-center justify-between bg-white/70 backdrop-blur-md">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setActiveChat(null)}
-                  className="p-2 hover:bg-rose-100 rounded-full text-rose-600"
-                >
-                  <FiArrowLeft className="text-lg" />
-                </button>
-                <img
-                  src={activeChat.avatarUrl}
-                  alt={activeChat.name}
-                  className="w-10 h-10 rounded-full object-cover border border-rose-200"
-                />
-                <div>
-                  <h3 className="font-bold text-sm text-gray-900">{activeChat.name}</h3>
-                  <p className="text-[10px] text-rose-600 font-bold">Glass ID: {activeChat.glassId}</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowTodModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full text-xs font-bold transition-all shadow-sm"
-              >
-                <FaDice className="text-sm" /> Truth / Dare
-              </button>
-            </header>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {messages.map((msg) => {
-                const isMe = msg.senderId === currentUser.glassId;
-                return (
-                  <div key={msg.id} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-                    {msg.type === "tod_card" ? (
-                      <div className="max-w-[85%] bg-gradient-to-r from-rose-500 to-pink-500 text-white p-3.5 rounded-2xl shadow-md space-y-2">
-                        <div className="flex items-center gap-1.5 text-xs font-black tracking-wide uppercase bg-black/20 px-2 py-0.5 rounded-md w-fit">
-                          🎲 {msg.todType} Challenge
-                        </div>
-                        <p className="text-sm font-semibold">{msg.content}</p>
-                        <span className="block text-[10px] text-rose-100 text-right">{msg.timestamp}</span>
-                      </div>
-                    ) : msg.type === "sticker" ? (
-                      <div className="p-3 bg-white/95 border border-rose-200 rounded-2xl shadow-sm text-center">
-                        <p className="text-sm font-bold text-rose-600">{msg.content}</p>
-                        <span className="block text-[9px] text-gray-500 mt-1">{msg.timestamp}</span>
-                      </div>
-                    ) : (
-                      <div
-                        className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl text-sm shadow-sm font-medium ${
-                          isMe
-                            ? "bg-rose-500 text-white rounded-br-none"
-                            : "bg-white text-gray-900 rounded-bl-none border border-rose-100"
-                        }`}
-                      >
-                        <p>{msg.content}</p>
-                        <div className="flex items-center justify-end gap-1 mt-1">
-                          <span className={`text-[9px] ${isMe ? "text-rose-200" : "text-gray-500"}`}>
-                            {msg.timestamp}
-                          </span>
-                          {isMe && <FiCheck className="text-[10px] text-rose-200" />}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              <div ref={chatEndRef} />
-            </div>
-
-            {showStickerDrawer && (
-              <div className="p-3 bg-white/95 border-t border-rose-100 max-h-56 flex flex-col">
-                <div className="flex gap-2 overflow-x-auto pb-2 border-b border-rose-100">
-                  {Object.keys(TANGLISH_STICKERS).map((category) => (
-                    <button
-                      key={category}
-                      onClick={() => setActiveStickerTab(category)}
-                      className={`px-3 py-1 text-xs font-bold rounded-full whitespace-nowrap transition-all ${
-                        activeStickerTab === category ? "bg-rose-500 text-white" : "bg-rose-50 text-rose-700"
-                      }`}
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 overflow-y-auto pt-2">
-                  {TANGLISH_STICKERS[activeStickerTab].map((sticker, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        sendMessage("sticker", sticker);
-                        setShowStickerDrawer(false);
-                      }}
-                      className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200/60 rounded-xl text-xs font-semibold text-gray-800 text-left transition-all"
-                    >
-                      {sticker}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <form
-              onSubmit={handleSendText}
-              className="p-3 border-t border-rose-100 bg-white/70 backdrop-blur-md flex items-center gap-2"
-            >
-              <button
-                type="button"
-                onClick={() => setShowStickerDrawer((prev) => !prev)}
-                className="p-2.5 bg-rose-100 hover:bg-rose-200 text-rose-600 rounded-full transition-all"
-                title="Stickers"
-              >
-                <FiSmile className="text-lg" />
-              </button>
-
-              <input
-                type="text"
-                placeholder="Type your message..."
-                value={inputMsg}
-                onChange={(e) => setInputMsg(e.target.value)}
-                className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-full text-sm text-gray-900 placeholder-gray-400 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-              />
-
-              <button
-                type="submit"
-                className="p-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md active:scale-95 transition-all"
-              >
-                <FiSend className="text-base" />
-              </button>
-            </form>
-          </>
-        )}
-
-        {/* Requests Modal */}
-        {showRequestsModal && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b pb-2">
-                <div className="flex items-center gap-2">
-                  <FiHeart className="text-rose-500 fill-rose-500" />
-                  <h4 className="font-bold text-gray-900 text-sm">Connection Requests</h4>
-                </div>
-                <button onClick={() => setShowRequestsModal(false)} className="text-gray-400 hover:text-gray-600">
-                  <FiX className="text-lg" />
-                </button>
-              </div>
-
-              {incomingRequests.length === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-4">No pending connection requests right now.</p>
-              ) : (
-                <div className="space-y-3 max-h-60 overflow-y-auto">
-                  {incomingRequests.map((req) => (
-                    <div key={req.fromGlassId} className="flex items-center justify-between p-2.5 bg-rose-50/70 rounded-2xl border border-rose-100">
-                      <div className="flex items-center gap-2">
-                        <img src={req.fromAvatar} alt={req.fromName} className="w-9 h-9 rounded-full object-cover border border-rose-300" />
-                        <div>
-                          <p className="text-xs font-bold text-gray-800">{req.fromName}</p>
-                          <p className="text-[10px] text-rose-500 font-bold">ID: {req.fromGlassId}</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => handleAcceptRequest(req)}
-                          className="px-2.5 py-1 bg-rose-500 text-white text-[11px] font-bold rounded-lg shadow hover:bg-rose-600"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => handleDeclineRequest(req.fromGlassId)}
-                          className="px-2 py-1 bg-gray-200 text-gray-700 text-[11px] font-bold rounded-lg hover:bg-gray-300"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Edit Profile Modal */}
-        {showProfileModal && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4 text-center relative">
-              <button
-                onClick={() => { setShowProfileModal(false); setProfileMsg(""); }}
-                className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 rounded-full"
-              >
-                <FiX className="text-lg" />
-              </button>
-
-              <h4 className="font-bold text-gray-900 text-base">Edit Profile</h4>
-
-              <div className="relative w-20 h-20 mx-auto">
-                <img
-                  src={currentUser.avatarUrl}
-                  alt={currentUser.name}
-                  className="w-full h-full rounded-full object-cover border-2 border-rose-400 shadow-md"
-                />
-                <label className="absolute bottom-0 right-0 p-1.5 bg-rose-500 text-white rounded-full cursor-pointer shadow hover:bg-rose-600">
-                  <FiCamera className="text-xs" />
-                  <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
-                </label>
-              </div>
-
-              {profileMsg && (
-                <p className="text-[11px] font-bold text-rose-600 bg-rose-50 p-2 rounded-xl border border-rose-100">
-                  {profileMsg}
-                </p>
-              )}
-
-              <div className="space-y-3 text-left">
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-semibold text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">5-Digit Glass ID</label>
-                  <input
-                    type="text"
-                    value={editGlassId}
-                    onChange={(e) => setEditGlassId(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                    maxLength={5}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-center text-sm font-bold tracking-widest text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={handleSaveProfile}
-                className="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl shadow active:scale-95 transition-all"
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Truth or Dare Modal */}
-        {showTodModal && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
-            <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
-              <h4 className="font-bold text-center text-gray-900 text-base">Custom Truth or Dare</h4>
-              <div className="flex bg-rose-100 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setTodType("Truth")}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    todType === "Truth" ? "bg-rose-500 text-white" : "text-rose-700"
-                  }`}
-                >
-                  TRUTH
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTodType("Dare")}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    todType === "Dare" ? "bg-rose-500 text-white" : "text-rose-700"
-                  }`}
-                >
-                  DARE
-                </button>
-              </div>
-
-              <textarea
-                placeholder={`Type your custom ${todType} challenge here...`}
-                value={customTodQuestion}
-                onChange={(e) => setCustomTodQuestion(e.target.value)}
-                rows={3}
-                className="w-full p-3 bg-gray-50 border border-gray-300 rounded-xl text-xs text-gray-900 placeholder-gray-400 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-              />
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowTodModal(false)}
-                  className="flex-1 py-2 bg-gray-100 text-gray-700 text-xs font-bold rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSendCustomTod}
-                  className="flex-1 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl shadow"
-                >
-                  Send Challenge
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Connect Modal */}
-        {showAddContactModal && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center p-4">
-            <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl space-y-4">
-              <h4 className="font-bold text-center text-gray-900 text-base">Connect via 5-Digit ID</h4>
-              {addContactError && (
-                <p className="text-[11px] text-red-500 text-center font-bold">{addContactError}</p>
-              )}
-              {requestStatus && (
-                <p className="text-[11px] text-emerald-600 text-center font-bold">{requestStatus}</p>
-              )}
-              <input
-                type="text"
-                placeholder="Enter 5-digit Glass ID"
-                value={searchGlassId}
-                onChange={(e) => setSearchGlassId(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                maxLength={5}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-center font-bold tracking-widest text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setShowAddContactModal(false); setAddContactError(""); setRequestStatus(""); }}
-                  className="flex-1 py-2 bg-gray-100 text-gray-700 text-xs font-bold rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSendConnectionRequest}
-                  disabled={isSending}
-                  className={`flex-1 py-2 text-white text-xs font-bold rounded-xl shadow transition-all ${
-                    isSending ? "bg-rose-300 cursor-not-allowed" : "bg-rose-500 hover:bg-rose-600"
-                  }`}
-                >
-                  {isSending ? "Sending..." : "Send Request"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
+
+      {/* Delete User/Contact Modal */}
+      {contactToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center border border-rose-100 dark:border-slate-700">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 mx-auto flex items-center justify-center mb-3">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-base font-bold text-gray-800 dark:text-white">Delete Contact?</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Remove <span className="font-bold text-rose-500">{contactToDelete}</span> from your contact list?
+            </p>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setContactToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-300 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDeleteContact(contactToDelete)}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 transition-all"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Message Action Sheet */}
+      {selectedMsgForDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-xs p-4"
+          onClick={() => setSelectedMsgForDelete(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-3xl p-4 w-full max-w-sm shadow-2xl flex flex-col gap-2 border border-rose-100 dark:border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center py-1">
+              Message Options
+            </p>
+            <button
+              onClick={() => handleDeleteForMe(selectedMsgForDelete.id)}
+              className="w-full py-3 rounded-2xl bg-gray-50 dark:bg-slate-700 text-gray-700 dark:text-gray-200 font-semibold text-xs text-center hover:bg-gray-100 dark:hover:bg-slate-600 transition-all"
+            >
+              Delete for Me
+            </button>
+            {selectedMsgForDelete.senderId === myFancyNumber && (
+              <button
+                onClick={() => handleDeleteForEveryone(selectedMsgForDelete.id)}
+                className="w-full py-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold text-xs text-center hover:bg-rose-100 transition-all"
+              >
+                Delete for Everyone
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedMsgForDelete(null)}
+              className="w-full py-2 text-gray-400 font-semibold text-xs text-center mt-1"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {callActive && (
+        <CallModal
+          channelName={activeChat.id}
+          isVideo={callIsVideo}
+          onEndCall={terminateCall}
+          localVideoTrack={localVideoTrack}
+          remoteUsers={remoteUsers}
+          isAudioMuted={isAudioMuted}
+          isVideoEnabled={isVideoEnabled}
+          onToggleMute={toggleMute}
+          onToggleVideo={toggleVideo}
+        />
+      )}
     </div>
   );
 }
