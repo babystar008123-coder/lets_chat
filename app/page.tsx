@@ -792,6 +792,63 @@ export default function LetsChatApp() {
       
                       {/* 3-Dots Message Action Sheet */}
       
+{selectedMsgForDelete && (
+        <div
+          className="fixed inset-0 z-[9999999] flex items-end justify-center bg-black/60 backdrop-blur-xs p-4"
+          onClick={() => setSelectedMsgForDelete(null)}
+        >
+          <div
+            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3 animate-in fade-in slide-in-from-bottom duration-200"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-1"></div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">
+              Message Options
+            </p>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteMessageForMe(selectedMsgForDelete.id);
+              }}
+              className="w-full py-3.5 rounded-2xl bg-gray-100 active:bg-gray-200 text-gray-800 font-bold text-xs text-center transition-all cursor-pointer"
+            >
+              Delete for you
+            </button>
+
+            {selectedMsgForDelete.senderId === currentUser?.glassId && !selectedMsgForDelete.isDeleted && (
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  await handleDeleteMessageForEveryone(selectedMsgForDelete.id);
+                }}
+                className="w-full py-3.5 rounded-2xl bg-rose-50 active:bg-rose-100 text-rose-600 font-black text-xs text-center border border-rose-200 transition-all cursor-pointer"
+              >
+                Delete for everyone
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSelectedMsgForDelete(null);
+              }}
+              className="w-full py-2.5 text-gray-400 font-bold text-xs text-center mt-1 cursor-pointer hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 </main>
     );
   }
